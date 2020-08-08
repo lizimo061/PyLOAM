@@ -1,12 +1,34 @@
 import numpy as np
+import math
 
 class FeatureExtract:
     def __init__(self, config=None):
         self.config = config
-        self.LINE_NUM = 16
+        self.LINE_NUM = 64
         self.RING_INDEX = 4
         self.THRES = 2
     
+    def get_scan_id(self, cloud):
+        xy_dist = np.sqrt(np.sum(np.square(cloud[:, :2]), axis=1))
+        angles = np.arctan(cloud[:, 2]/xy_dist) * 180/math.pi
+        if self.LINE_NUM == 16:
+            scan_ids = (angles + 15)/2 + 0.5
+        elif self.LINE_NUM == 32:
+            scan_ids = int((angles + 93./3.) * 3./4.)
+        elif self.LINE_NUM == 64:
+            scan_ids = self.LINE_NUM / 2 + (-8.83 - angles) * 2. + .5
+            upper = np.where(angles >= -8.83)
+            scan_ids[upper] = (2 - angles[upper]) * 3.0 + 0.5
+        else:
+            print("Specific line number not supported!")
+            return
+        scan_ids = scan_ids.astype(int)
+        correct_id = np.where(np.logical_and(scan_ids >= 0, scan_ids < self.LINE_NUM))
+        scan_ids = scan_ids[correct_id]
+        cloud = cloud[correct_id]
+        scan_id = np.expand_dims(scan_id, axis=1)
+        return cloud, scan_ids    
+
     def remove_close_points(self, cloud, thres):
         """ Input size: N*3 """
         dists = np.sum(np.square(cloud[:, :3]), axis=1)

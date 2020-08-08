@@ -24,6 +24,7 @@ class DataLoader:
     def sort_files(self):
         pass
 
+
 class PCDLoader(DataLoader):
     def get_pc(self, index):
         if index < self.scan_num:
@@ -36,3 +37,13 @@ class PCDLoader(DataLoader):
     def sort_files(self):
         self.file_list.sort(key=lambda file: int(file[:-4]))
 
+class KittiLoader(DataLoader):
+    def get_pc(self, index):
+        if index < self.scan_num:
+            scan = np.fromfile(os.path.join(self.path, self.file_list[index]), dtype=np.float32).reshape(-1,4)
+            return scan
+        else:
+            print("Access out of range!")
+
+    def sort_files(self):
+        self.file_list.sort(key=lambda file: int(file[:-4]))
