@@ -7,6 +7,7 @@ class FeatureExtract:
         self.LINE_NUM = 64
         self.RING_INDEX = 4
         self.THRES = 2
+        self.used_line_num = None
     
     def get_scan_id(self, cloud):
         xy_dist = np.sqrt(np.sum(np.square(cloud[:, :2]), axis=1))
@@ -23,10 +24,13 @@ class FeatureExtract:
             print("Specific line number not supported!")
             return
         scan_ids = scan_ids.astype(int)
-        correct_id = np.where(np.logical_and(scan_ids >= 0, scan_ids < self.LINE_NUM))
+        if self.LINE_NUM == 64:
+            correct_id = np.where(np.logical_and(scan_ids >= 0, scan_ids < 50)) # Only use 50 lines
+        else:
+            correct_id = np.where(np.logical_and(scan_ids >= 0, scan_ids < self.LINE_NUM))
         scan_ids = scan_ids[correct_id]
         cloud = cloud[correct_id]
-        scan_id = np.expand_dims(scan_id, axis=1)
+        scan_ids = np.expand_dims(scan_ids, axis=1)
         return cloud, scan_ids    
 
     def remove_close_points(self, cloud, thres):
@@ -36,7 +40,9 @@ class FeatureExtract:
         return cloud_out
 
     def divide_lines(self, cloud):
-        clouds_by_line = [cloud[cloud[:, self.RING_INDEX] == val, :] for val in range(0, self.LINE_NUM)]
+        line_num = np.max(cloud[:, self.RING_INDEX]) + 1
+        self.used_line_num = int(line_num)
+        clouds_by_line = [cloud[cloud[:, self.RING_INDEX] == val, :] for val in range(0, self.used_line_num)]
         cloud_out = np.concatenate(clouds_by_line, axis=0)
         return cloud_out
 
@@ -45,8 +51,8 @@ class FeatureExtract:
         kernel[5] = -10
         curvatures = np.apply_along_axis(lambda x: np.convolve(x, kernel, 'same'), 0, cloud[:, :3])
         curvatures = np.sum(np.square(curvatures), axis=1)
-        scan_start_id = [np.where(cloud[:, self.RING_INDEX] == val)[0][0] + 5 for val in range(0, self.LINE_NUM)]
-        scan_end_id = [np.where(cloud[:, self.RING_INDEX] == val)[0][-1] - 5 for val in range(0, self.LINE_NUM)]
+        scan_start_id = [np.where(cloud[:, self.RING_INDEX] == val)[0][0] + 5 for val in range(0, self.used_line_num)]
+        scan_end_id = [np.where(cloud[:, self.RING_INDEX] == val)[0][-1] - 5 for val in range(0, self.used_line_num)]
         return curvatures, scan_start_id, scan_end_id
 
     def remove_occluded(self, cloud):
@@ -84,7 +90,8 @@ class FeatureExtract:
         curvatures = np.expand_dims(curvatures, axis=1)
 
         curv_index = np.hstack((curvatures, index))
-        for scan_id in range(self.LINE_NUM):
+        for scan_id in range(self.used_line_num):
+            """ TODO: Avoid empty line """
             for i in range(6):
                 sp = int((scan_start_id[scan_id] * (6-i) + scan_end_id[scan_id] * i) / 6)
                 ep = int((scan_start_id[scan_id] * (5-i) + scan_end_id[scan_id] * (i+1)) / 6 + 1)
@@ -159,6 +166,11 @@ class FeatureExtract:
         return corner_sharp, corner_less, surf_flat, surf_less
 
     def feature_extract(self, cloud):
+        if self.RING_INDEX is None:
+            cloud, line_id = self.get_scan_id(cloud)
+            cloud = np.hstack((cloud, line_id.astype(np.float32)))
+            self.RING_INDEX = cloud.shape[1]-1
+
         cloud = self.remove_close_points(cloud, self.THRES)
         cloud = self.divide_lines(cloud)
         curvatures, scan_start_id, scan_end_id = self.compute_curvatures(cloud)
