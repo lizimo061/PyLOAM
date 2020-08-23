@@ -3,6 +3,7 @@ import open3d as o3d
 from feature_extract import FeatureExtract
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
+from minisam import *
 
 class Odometry:
     def __init__(self, config=None):
@@ -29,7 +30,11 @@ class Odometry:
             self.surf_last = surf_less
             self.corner_last = corner_less
         else:
-            for opt_iter in range(self.OPTIM_ITERATION)
+            for opt_iter in range(self.OPTIM_ITERATION):
+                corner_points, corner_points_a, corner_points_b = self.get_corner_correspondences(corner_sharp)
+                surf_points, surf_points_a, surf_points_b, surf_points_c = self.get_surf_correspondences(surf_flat)
+
+
 
     def get_corner_correspondences(self, corner_sharp):
         curr_points = []
@@ -119,7 +124,7 @@ class Odometry:
                     points_a.append(self.surf_last[closest_ind, :3])
                     points_b.append(self.surf_last[min_ind2, :3])
                     points_c.append(self.surf_last[min_ind3, :3])
-                    
+
         return curr_points, points_a, points_b, points_c
 
     def transform_to_start(self, pt):
@@ -139,9 +144,16 @@ class Odometry:
         pc_o3d.points = o3d.utility.Vector3dVector(cloud[:, :3])
         return pc_o3d
 
+class PlaneFactor(Factor):
+    def __init__(self, key, surf_pt, pt_a, pt_b, pt_c, loss):
+        Factor.__init__(self, 1, [key], loss)
+        self.surf_p_ = surf_pt
+        self.p_a_ = pt_a
+        self.p_b_ = pt_b
+        self.p_c_ = pt_c
 
-class EdgeErrorFactor(Factor):
-    pass
-
-class PlaneErrorFactor(Factor):
-    pass
+    def copy(self):
+        return PlaneFactor(self.key()[0], self.surf_p_, self.p_a_, self.p_b_, self.p_c_, self.lossFunction())
+    
+    def error(self, variables):
+        pass
