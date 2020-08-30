@@ -4,6 +4,7 @@ from feature_extract import FeatureExtract
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
 from minisam import *
+from utils import *
 
 class Odometry:
     def __init__(self, config=None):
@@ -12,10 +13,8 @@ class Odometry:
         self.surf_last = None
         self.corner_last = None
         self.feature_extractor = FeatureExtract()
-        self.q_w_curr = np.array([0, 0, 0, 1])
-        self.t_w_curr = np.array([0, 0, 0])
-        self.q_last_curr = np.array([0, 0, 0, 1])
-        self.t_last_curr = np.array([0, 0, 0])
+
+        self.transform = np.array([0, 0, 0, 0, 0, 0]) # rx, ry, rz, tx, ty, tz
         # TODO: make below variables to config
         self.DIST_THRES = 25
         self.RING_INDEX = 4
@@ -131,11 +130,10 @@ class Odometry:
         s = 1.0
         if self.DISTORTION:
             s = 0.5  # TODO: hard code
-        q_unit = np.array([0, 0, 0, 1])
-        rots = R.from_quat([q_unit, self.q_last_curr])
-        slerp = Slerp([0, 1], rots)
-        rot_point_last = slerp([s])
-        undistorted_pt = rot_point_last.as_dcm() * pt.reshape(3,1) + self.t_last_curr.reshape(3,1) * s
+        scaled_transform = s * self.transform
+        rot_mat = get_rotation(scaled_transform[0], scaled_transform[1], scaled_transform[2])
+        translation = scaled_transform[3:6]
+        undistorted_pt = np.transpose(rot_mat) * (pt.reshape(3,1) - translation.reshape(3,1))
         return undistorted_pt
 
     @staticmethod
@@ -144,16 +142,35 @@ class Odometry:
         pc_o3d.points = o3d.utility.Vector3dVector(cloud[:, :3])
         return pc_o3d
 
-class PlaneFactor(Factor):
-    def __init__(self, key, surf_pt, pt_a, pt_b, pt_c, loss):
-        Factor.__init__(self, 1, [key], loss)
-        self.surf_p_ = surf_pt
-        self.p_a_ = pt_a
-        self.p_b_ = pt_b
-        self.p_c_ = pt_c
 
+class PlaneFactor(Factor):
+    def __init__(self, key, surf_pt, pt_a, pt_b, pt_c, scale, loss):
+        Factor.__init__(self, 1, [key], loss)
+        self.surf_p_ = surf_pt.reshape(3,1)
+        self.p_a_ = pt_a.reshape(3,1)
+        self.p_b_ = pt_b.reshape(3,1)
+        self.p_c_ = pt_c.reshape(3,1)
+        self.scale = scale
+        self.plane_norm = np.cross((self.p_a_ - self.p_b_), (self.p_a_ - self.p_c_))
+        norm = np.linalg.norm(self.plane_norm)
+        self.plane_norm = self.plane_norm / norm
+
+    def transform_curr(self, transform):
+        scaled_transform = self.scale * transform
+        rot_mat = get_rotation(scaled_transform[0], scaled_transform[1], scaled_transform[2])
+        translation = scaled_transform[3:6]
+        undistorted_pt = np.transpose(rot_mat) * (self.surf_p_ - translation.reshape(3,1))
+        return undistorted_pt
+    
     def copy(self):
         return PlaneFactor(self.key()[0], self.surf_p_, self.p_a_, self.p_b_, self.p_c_, self.lossFunction())
     
     def error(self, variables):
-        pass
+        params = variables.at(self.keys()[0])
+        point_sel = self.transform_curr(params)
+        dist = np.dot((point_sel - self.p_a_), self.plane_norm)
+        return np.array([dist])
+
+    def jacobians(self, variables):
+        params = variables.at(self.kets()[0])
+        
