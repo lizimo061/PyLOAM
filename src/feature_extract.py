@@ -5,7 +5,8 @@ class FeatureExtract:
     def __init__(self, config=None):
         self.config = config
         self.LINE_NUM = 64
-        self.RING_INDEX = 4
+        self.RING_INDEX = None
+        self.RING_INIT = False
         self.THRES = 2
         self.used_line_num = None
     
@@ -166,7 +167,7 @@ class FeatureExtract:
         return corner_sharp, corner_less, surf_flat, surf_less
 
     def feature_extract(self, cloud):
-        if self.RING_INDEX is None:
+        if self.RING_INIT is False:
             cloud, line_id = self.get_scan_id(cloud)
             cloud = np.hstack((cloud, line_id.astype(np.float32)))
             self.RING_INDEX = cloud.shape[1]-1
