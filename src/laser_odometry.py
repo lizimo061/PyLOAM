@@ -20,9 +20,16 @@ class Odometry:
         self.DIST_THRES = 25
         self.RING_INDEX = 4
         self.NEARBY_SCAN = 2.5
-        self.OPTIM_ITERATION = 1
+        self.OPTIM_ITERATION = 2
         self.DISTORTION = False
         self.USE_ROBUST_LOSS = True
+    
+    def angle_norm(self, angle):
+        if angle <= -math.pi:
+            angle += math.pi
+        elif angle > math.pi:
+            angle -= math.pi
+        return angle
 
     def grab_frame(self, cloud):
         corner_sharp, corner_less, surf_flat, surf_less = self.feature_extractor.feature_extract(cloud)
@@ -33,7 +40,7 @@ class Odometry:
         else:
             weight = 1.0
             if self.USE_ROBUST_LOSS:
-                loss = CauchyLoss.Cauchy(1.0)
+                loss = HuberLoss.Huber(1.0)
             else:
                 loss = None
             for opt_iter in range(self.OPTIM_ITERATION):
@@ -47,15 +54,19 @@ class Odometry:
                 init_pose.add(key('p', 0), self.transform)
 
                 opt_param = LevenbergMarquardtOptimizerParams()
-                opt_param.max_iterations = 5
+                opt_param.max_iterations = 3
                 opt_param.verbosity_level = NonlinearOptimizerVerbosityLevel.ITERATION
                 opt = LevenbergMarquardtOptimizer(opt_param)
                 opt_pose = Variables()
                 status = opt.optimize(single_pose_graph, init_pose, opt_pose)
 
-                if status != NonlinearOptimizationStatus.SUCCESS:
+                if status is NonlinearOptimizationStatus.SUCCESS:
                     print("Optimiazation error: ", status)
                 print("Optimizied values: ", opt_pose.at(key('p', 0)))
+                self.transform = opt_pose.at(key('p', 0)).copy()
+                self.transform[0] = self.angle_norm(self.transform[0])
+                self.transform[1] = self.angle_norm(self.transform[1])
+                self.transform[2] = self.angle_norm(self.transform[2])
 
     def get_corner_correspondences(self, corner_sharp):
         curr_points = []
@@ -235,7 +246,6 @@ class PlaneFactor(Factor):
                               - (sry*srz - cry*crz*srx) * self.plane_norm[2]
         J_d_transform[0][5] = crx*sry * self.plane_norm[0] - srx * self.plane_norm[1] - crx*cry * self.plane_norm[2]
         return [J_d_transform]
-
 
 
 
