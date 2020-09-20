@@ -15,12 +15,12 @@ class Odometry:
         self.corner_last = None
         self.feature_extractor = FeatureExtract()
 
-        self.transform = np.array([0, 0, 0, 0, 0, 0]) # rx, ry, rz, tx, ty, tz
+        self.transform = np.array([0., 0., 0., 0., 0., 0.]) # rx, ry, rz, tx, ty, tz
         # TODO: make below variables to config
         self.DIST_THRES = 25
         self.RING_INDEX = 4
         self.NEARBY_SCAN = 2.5
-        self.OPTIM_ITERATION = 2
+        self.OPTIM_ITERATION = 25
         self.DISTORTION = False
         self.USE_ROBUST_LOSS = False
         self.VOXEL_SIZE = 0.2
@@ -34,6 +34,7 @@ class Odometry:
 
     def grab_frame(self, cloud):
         corner_sharp, corner_less, surf_flat, surf_less = self.feature_extractor.feature_extract(cloud)
+        is_degenerate = False
         if not self.init:
             self.init = True
             surf_less_index = self.get_downsample_cloud(surf_less)
@@ -47,31 +48,31 @@ class Odometry:
             else:
                 loss = None
             for opt_iter in range(self.OPTIM_ITERATION):
-                single_pose_graph = FactorGraph()
-                corner_points, corner_points_a, corner_points_b = self.get_corner_correspondences(corner_sharp)
-                # surf_points, surf_points_a, surf_points_b, surf_points_c = self.get_surf_correspondences(surf_flat)
-                print("Surf points: ", len(corner_points))
-                # for i in range(len(surf_points)):
-                #     single_pose_graph.add(PlaneFactor(key('p', 0), surf_points[i], surf_points_a[i], surf_points_b[i], surf_points_c[i], weight, loss))
-                for i in range(len(corner_points)):
-                    single_pose_graph.add(EdgeFactor(key('p', 0), corner_points[i], corner_points_a[i], corner_points_b[i], weight, loss))
-                init_pose = Variables()
-                init_pose.add(key('p', 0), self.transform)
+                if opt_iter % 5 == 0:
+                    corner_points, corner_points_a, corner_points_b = self.get_corner_correspondences(corner_sharp)
+                    surf_points, surf_points_a, surf_points_b, surf_points_c = self.get_surf_correspondences(surf_flat)
+                edge_A, edge_B = self.get_edge_mat(corner_points, corner_points_a, corner_points_b, 1.0)
+                surf_A, surf_B = self.get_plane_mat(surf_points, surf_points_a, surf_points_b, surf_points_c, 1.0)
 
-                opt_param = LevenbergMarquardtOptimizerParams()
-                opt_param.max_iterations = 3
-                opt_param.verbosity_level = NonlinearOptimizerVerbosityLevel.ITERATION
-                opt = LevenbergMarquardtOptimizer(opt_param)
-                opt_pose = Variables()
-                status = opt.optimize(single_pose_graph, init_pose, opt_pose)
+                A_mat = np.vstack((edge_A, surf_A))
+                B_mat = np.vstack((edge_B, surf_B)) * -0.05 # Reference to original LOAM
 
-                if status is NonlinearOptimizationStatus.SUCCESS:
-                    print("Optimiazation error: ", status)
-                print("Optimizied values: ", opt_pose.at(key('p', 0)))
-                self.transform = opt_pose.at(key('p', 0)).copy()
-                self.transform[0] = self.angle_norm(self.transform[0])
-                self.transform[1] = self.angle_norm(self.transform[1])
-                self.transform[2] = self.angle_norm(self.transform[2])
+                AtA = np.matmul(A_mat.transpose(), A_mat)
+                AtB = np.matmul(A_mat.transpose(), B_mat)
+                X_mat = np.linalg.solve(AtA, AtB)
+
+                if opt_iter == 0:
+                    vals, vecs = np.linalg.eig(AtA)
+                    # TODO: Handle degeneration
+                
+                self.transform += np.squeeze(X_mat)
+                print(X_mat)
+
+                delta_r = np.linalg.norm(np.rad2deg(X_mat[:3]))
+                delta_t = np.linalg.norm(X_mat[4:] * 100)
+                if delta_r < 0.1 and delta_t < 0.1:
+                    print("Delta too small.")
+                    break
 
     def get_corner_correspondences(self, corner_sharp):
         curr_points = []
@@ -191,6 +192,114 @@ class Odometry:
         translation = scaled_transform[3:6]
         undistorted_pt = np.transpose(rot_mat).dot(pt.reshape(3,1) - translation.reshape(3,1))
         return undistorted_pt
+
+    def get_plane_mat(self, surf_points, surf_points_a, surf_points_b, surf_points_c, weight):
+        A_mat = np.empty([len(surf_points), 6])
+        B_mat = np.empty([len(surf_points), 1])
+
+        srx = np.sin(self.transform[0])
+        crx = np.cos(self.transform[0])
+        sry = np.sin(self.transform[1])
+        cry = np.cos(self.transform[1])
+        srz = np.sin(self.transform[2])
+        crz = np.cos(self.transform[2])
+        tx = self.transform[3]
+        ty = self.transform[4]
+        tz = self.transform[5]
+        for i in range(len(surf_points)):
+            pt = surf_points[i].reshape(3,1)
+            pt_a = surf_points_a[i].reshape(3,1)
+            pt_b = surf_points_b[i].reshape(3,1)
+            pt_c = surf_points_c[i].reshape(3,1)
+            pt_sel = self.transform_to_start(pt)
+            plane_norm = np.cross((pt_a - pt_b), (pt_a - pt_c), axis=0)
+            norm = np.linalg.norm(plane_norm)
+            plane_norm = plane_norm / norm
+
+            B_mat[i, 0] = np.dot(np.transpose(plane_norm),(pt_sel - pt_a)) * weight
+            A_mat[i, 0] = (-crx*sry*srz*pt[0] + crx*crz*sry*pt[1] + srx*sry*pt[2] \
+                          + tx*crx*sry*srz - ty*crx*crz*sry - tz*srx*sry) * plane_norm[0] \
+                          + (srx*srz*pt[0] - crz*srx*pt[1] + crx*pt[2] \
+                          + ty*crz*srx - tz*crx - tx*srx*srz) * plane_norm[1] \
+                          + (crx*cry*srz*pt[0] - crx*cry*crz*pt[1] - cry*srx*pt[2] \
+                          + tz*cry*srx + ty*crx*cry*crz - tx*crx*cry*srz) * plane_norm[2]
+            A_mat[i, 1] = ((-crz*sry - cry*srx*srz)*pt[0] \
+                          + (cry*crz*srx - sry*srz)*pt[1] - crx*cry*pt[2] \
+                          + tx*(crz*sry + cry*srx*srz) + ty*(sry*srz - cry*crz*srx) \
+                          + tz*crx*cry) * plane_norm[0] \
+                          + ((cry*crz - srx*sry*srz)*pt[0] \
+                          + (cry*srz + crz*srx*sry)*pt[1] - crx*sry*pt[2] \
+                          + tz*crx*sry - ty*(cry*srz + crz*srx*sry) \
+                          - tx*(cry*crz - srx*sry*srz)) * plane_norm[2]
+            A_mat[i, 2] = ((-cry*srz - crz*srx*sry)*pt[0] + (cry*crz - srx*sry*srz)*pt[1] \
+                          + tx*(cry*srz + crz*srx*sry) - ty*(cry*crz - srx*sry*srz)) * plane_norm[0] \
+                          + (-crx*crz*pt[0] - crx*srz*pt[1] \
+                          + ty*crx*srz + tx*crx*crz) * plane_norm[1] \
+                          + ((cry*crz*srx - sry*srz)*pt[0] + (crz*sry + cry*srx*srz)*pt[1] \
+                          + tx*(sry*srz - cry*crz*srx) - ty*(crz*sry + cry*srx*srz)) * plane_norm[2]
+            A_mat[i, 3] = -(cry*crz - srx*sry*srz) * plane_norm[0] + crx*srz * plane_norm[1] \
+                          - (crz*sry + cry*srx*srz) * plane_norm[2]
+            A_mat[i, 4] = -(cry*srz + crz*srx*sry) * plane_norm[0] - crx*crz * plane_norm[1] \
+                          - (sry*srz - cry*crz*srx) * plane_norm[2]
+            A_mat[i, 5] = crx*sry * plane_norm[0] - srx * plane_norm[1] - crx*cry * plane_norm[2]
+
+        return A_mat, B_mat
+
+    def get_edge_mat(self, corner_points, corner_points_a, corner_points_b, weight):
+        A_mat = np.empty([len(corner_points), 6])
+        B_mat = np.empty([len(corner_points), 1])
+
+        srx = np.sin(self.transform[0])
+        crx = np.cos(self.transform[0])
+        sry = np.sin(self.transform[1])
+        cry = np.cos(self.transform[1])
+        srz = np.sin(self.transform[2])
+        crz = np.cos(self.transform[2])
+        tx = self.transform[3]
+        ty = self.transform[4]
+        tz = self.transform[5]
+
+        for i in range(len(corner_points)):
+            pt = corner_points[i].reshape(3,1)
+            pt_a = corner_points_a[i].reshape(3,1)
+            pt_b = corner_points_b[i].reshape(3,1)
+            pt_sel = self.transform_to_start(pt)
+            edge_normal = np.cross((pt_sel - pt_a), (pt_sel - pt_b), axis=0)
+            ab = pt_a - pt_b
+            ab_norm = np.linalg.norm(ab)
+            edge_norm = np.linalg.norm(edge_normal)
+            la = (ab[1]*edge_normal[2] + ab[2]*edge_normal[1]) / (ab_norm*edge_norm)
+            lb = -(ab[0]*edge_normal[2] - ab[2]*edge_normal[0]) / (ab_norm*edge_norm)
+            lc = -(ab[0]*edge_normal[1] + ab[1]*edge_normal[0]) / (ab_norm*edge_norm)
+
+            B_mat[i, 0] =  weight * (edge_norm / ab_norm)
+            A_mat[i, 0] = (-crx*sry*srz*pt[0] + crx*crz*sry*pt[1] + srx*sry*pt[2] \
+                          + tx*crx*sry*srz - ty*crx*crz*sry - tz*srx*sry) * la \
+                          + (srx*srz*pt[0] - crz*srx*pt[1] + crx*pt[2] \
+                          + ty*crz*srx - tz*crx - tx*srx*srz) * lb \
+                          + (crx*cry*srz*pt[0] - crx*cry*crz*pt[1] - cry*srx*pt[2] \
+                          + tz*cry*srx + ty*crx*cry*crz - tx*crx*cry*srz) * lc
+            A_mat[i, 1] = ((-crz*sry - cry*srx*srz)*pt[0] \
+                          + (cry*crz*srx - sry*srz)*pt[1] - crx*cry*pt[2] \
+                          + tx*(crz*sry + cry*srx*srz) + ty*(sry*srz - cry*crz*srx) \
+                          + tz*crx*cry) * la \
+                          + ((cry*crz - srx*sry*srz)*pt[0] \
+                          + (cry*srz + crz*srx*sry)*pt[1] - crx*sry*pt[2] \
+                          + tz*crx*sry - ty*(cry*srz + crz*srx*sry) \
+                          - tx*(cry*crz - srx*sry*srz)) * lc
+            A_mat[i, 2] = ((-cry*srz - crz*srx*sry)*pt[0] + (cry*crz - srx*sry*srz)*pt[1] \
+                          + tx*(cry*srz + crz*srx*sry) - ty*(cry*crz - srx*sry*srz)) * la \
+                          + (-crx*crz*pt[0] - crx*srz*pt[1] \
+                          + ty*crx*srz + tx*crx*crz) * lb \
+                          + ((cry*crz*srx - sry*srz)*pt[0] + (crz*sry + cry*srx*srz)*pt[1] \
+                          + tx*(sry*srz - cry*crz*srx) - ty*(crz*sry + cry*srx*srz)) * lc
+            A_mat[i, 3] = -(cry*crz - srx*sry*srz) * la + crx*srz * lb \
+                          - (crz*sry + cry*srx*srz) * lc
+            A_mat[i, 4] = -(cry*srz + crz*srx*sry) * la - crx*crz * lb \
+                          - (sry*srz - cry*crz*srx) * lc
+            A_mat[i, 5] = crx*sry * la - srx * lb - crx*cry * lc
+
+        return A_mat, B_mat
 
 class PlaneFactor(Factor):
     def __init__(self, key, surf_pt, pt_a, pt_b, pt_c, weight, loss):
