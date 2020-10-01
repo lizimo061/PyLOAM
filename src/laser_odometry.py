@@ -14,7 +14,8 @@ class Odometry:
         self.surf_last = None
         self.corner_last = None
         self.feature_extractor = FeatureExtract()
-
+        self.rot_w_curr = np.eye(3)
+        self.trans_w_curr = np.zeros((3,1))
         self.transform = np.array([0., 0., 0., 0., 0., 0.]) # rx, ry, rz, tx, ty, tz
         # TODO: make below variables to config
         self.DIST_THRES = 25
@@ -41,8 +42,10 @@ class Odometry:
             corner_less_index = self.get_downsample_cloud(corner_less)
             self.surf_last = surf_less[surf_less_index, :]
             self.corner_last = corner_less[corner_less_index, :]
+            return
         else:
             weight = 1.0
+            P_mat = np.identity(6)
             if self.USE_ROBUST_LOSS:
                 loss = HuberLoss.Huber(1.0)
             else:
@@ -60,10 +63,24 @@ class Odometry:
                 AtA = np.matmul(A_mat.transpose(), A_mat)
                 AtB = np.matmul(A_mat.transpose(), B_mat)
                 X_mat = np.linalg.solve(AtA, AtB)
-
+                
                 if opt_iter == 0:
                     vals, vecs = np.linalg.eig(AtA)
+                    eigen_vec = vecs.copy()
+                    import pdb
+                    pdb.set_trace()
                     # TODO: Handle degeneration
+                    for i in range(6):
+                        if vals[i] < 10:
+                            print("Warning: Degenerate!")
+                            is_degenerate = True
+                            eigen_vec[:, i] = np.zeros(6)
+                        else:
+                            break
+                    P_mat = np.matmul(np.linalg.inv(vecs), eigen_vec)
+                
+                if is_degenerate:
+                    X_mat = np.matmul(P_mat, X_mat)
                 
                 self.transform += np.squeeze(X_mat)
                 print(X_mat)
@@ -73,6 +90,11 @@ class Odometry:
                 if delta_r < 0.1 and delta_t < 0.1:
                     print("Delta too small.")
                     break
+
+            self.trans_w_curr = self.trans_w_curr + self.rot_w_curr * # TODO
+            self.rot_w_curr = self.rot_w_curr * get_rotation(self.transform[0], self.transform[1], self.transform[2])
+            
+
 
     def get_corner_correspondences(self, corner_sharp):
         curr_points = []
@@ -193,6 +215,13 @@ class Odometry:
         undistorted_pt = np.transpose(rot_mat).dot(pt.reshape(3,1) - translation.reshape(3,1))
         return undistorted_pt
 
+    def transfrom_to_end(self, pt):
+        un_point = self.transform_to_start(pt)
+        rot_mat = get_rotation(self.transform[0], self.transform[1], self.transform[2])
+        translation = self.transform[3:6]
+        pt_end = rot_mat.T.dot(un_point) + translation
+        return pt_end
+
     def get_plane_mat(self, surf_points, surf_points_a, surf_points_b, surf_points_c, weight):
         A_mat = np.empty([len(surf_points), 6])
         B_mat = np.empty([len(surf_points), 1])
@@ -300,6 +329,7 @@ class Odometry:
             A_mat[i, 5] = crx*sry * la - srx * lb - crx*cry * lc
 
         return A_mat, B_mat
+
 
 class PlaneFactor(Factor):
     def __init__(self, key, surf_pt, pt_a, pt_b, pt_c, weight, loss):
