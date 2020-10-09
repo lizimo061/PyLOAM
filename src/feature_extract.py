@@ -1,4 +1,6 @@
 import numpy as np
+import threading
+import queue
 import math
 
 class FeatureExtract:
@@ -178,3 +180,44 @@ class FeatureExtract:
         picked_list = self.remove_occluded(cloud)
         corner_sharp, corner_less, surf_flat, surf_less = self.feature_classification(cloud, curvatures, picked_list, scan_start_id, scan_end_id)
         return cloud[corner_sharp, :], cloud[corner_less, :], cloud[surf_flat, :], cloud[surf_less, :]
+    
+    def feature_extract_id(self, cloud):
+        if self.RING_INIT is False:
+            cloud, line_id = self.get_scan_id(cloud)
+            cloud = np.hstack((cloud, line_id.astype(np.float32)))
+            self.RING_INDEX = cloud.shape[1]-1
+
+        cloud = self.remove_close_points(cloud, self.THRES)
+        cloud = self.divide_lines(cloud)
+        curvatures, scan_start_id, scan_end_id = self.compute_curvatures(cloud)
+        picked_list = self.remove_occluded(cloud)
+        corner_sharp, corner_less, surf_flat, surf_less = self.feature_classification(cloud, curvatures, picked_list, scan_start_id, scan_end_id)
+        return [corner_sharp, corner_less, surf_flat, surf_less]
+
+class FeatureManager(threading.Thread):
+    feature_queue = []
+    process_id = 0
+    process_lock = threading.Lock()
+
+    def __init__(self, loader, config=None):
+        threading.Thread.__init__(self)
+        self.feature_extractor = FeatureExtract(config=config)
+        self.data_loader = loader
+
+    def run(self):
+        while FeatureManager.process_id < len(self.data_loader):
+            with FeatureManager.process_lock:
+                feature_idx = self.feature_extractor.feature_extract_id(self.data_loader[FeatureManager.process_id])
+                print("Feature processed: ", FeatureManager.process_id)
+                FeatureManager.process_id += 1
+                FeatureManager.feature_queue.append(feature_idx)
+
+    @classmethod
+    def get_feature(self):
+        feature = []
+        with FeatureManager.process_lock:
+            if len(FeatureManager.feature_queue) is 0:
+                print("Error: No feature processed")
+            else:
+                feature = FeatureManager.feature_queue.pop(0)
+        return feature

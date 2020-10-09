@@ -25,6 +25,9 @@ class Odometry:
         self.DISTORTION = False
         self.USE_ROBUST_LOSS = False
         self.VOXEL_SIZE = 0.2
+
+        # For test,
+        self.trans_list = []
     
     def angle_norm(self, angle):
         if angle <= -math.pi:
@@ -33,8 +36,11 @@ class Odometry:
             angle -= 2*math.pi
         return angle
 
-    def grab_frame(self, cloud):
-        corner_sharp, corner_less, surf_flat, surf_less = self.feature_extractor.feature_extract(cloud)
+    def grab_frame(self, cloud, feature_id):
+        corner_sharp = cloud[feature_id[0], :]
+        corner_less = cloud[feature_id[1], :]
+        surf_flat = cloud[feature_id[2], :]
+        surf_less = cloud[feature_id[3], :]
         is_degenerate = False
         if not self.init:
             self.init = True
@@ -42,7 +48,6 @@ class Odometry:
             corner_less_index = self.get_downsample_cloud(corner_less)
             self.surf_last = surf_less[surf_less_index, :]
             self.corner_last = corner_less[corner_less_index, :]
-            return
         else:
             weight = 1.0
             P_mat = np.identity(6)
@@ -67,9 +72,6 @@ class Odometry:
                 if opt_iter == 0:
                     vals, vecs = np.linalg.eig(AtA)
                     eigen_vec = vecs.copy()
-                    import pdb
-                    pdb.set_trace()
-                    # TODO: Handle degeneration
                     for i in range(6):
                         if vals[i] < 10:
                             print("Warning: Degenerate!")
@@ -83,7 +85,6 @@ class Odometry:
                     X_mat = np.matmul(P_mat, X_mat)
                 
                 self.transform += np.squeeze(X_mat)
-                print(X_mat)
 
                 delta_r = np.linalg.norm(np.rad2deg(X_mat[:3]))
                 delta_t = np.linalg.norm(X_mat[4:] * 100)
@@ -91,10 +92,14 @@ class Odometry:
                     print("Delta too small.")
                     break
 
-            self.trans_w_curr = self.trans_w_curr + self.rot_w_curr * # TODO
-            self.rot_w_curr = self.rot_w_curr * get_rotation(self.transform[0], self.transform[1], self.transform[2])
-            
-
+            R_last_curr = get_rotation(self.transform[0], self.transform[1], self.transform[2])
+            t_last_curr = -np.matmul(R_last_curr, self.transform[3:].reshape(3,1))
+            self.trans_w_curr = self.trans_w_curr + np.matmul(self.rot_w_curr, t_last_curr)
+            self.rot_w_curr = self.rot_w_curr * R_last_curr
+            self.trans_list.append(self.trans_w_curr)
+        
+        self.transform = np.array([0., 0., 0., 0., 0., 0.])
+        return self.trans_w_curr
 
     def get_corner_correspondences(self, corner_sharp):
         curr_points = []
@@ -330,154 +335,5 @@ class Odometry:
 
         return A_mat, B_mat
 
-
-class PlaneFactor(Factor):
-    def __init__(self, key, surf_pt, pt_a, pt_b, pt_c, weight, loss):
-        Factor.__init__(self, 1, [key], loss)
-        self.surf_p_ = surf_pt.reshape(3,1)
-        self.p_a_ = pt_a.reshape(3,1)
-        self.p_b_ = pt_b.reshape(3,1)
-        self.p_c_ = pt_c.reshape(3,1)
-        self.weight = weight
-        self.plane_norm = np.cross((self.p_a_ - self.p_b_), (self.p_a_ - self.p_c_), axis=0)
-        norm = np.linalg.norm(self.plane_norm)
-        self.plane_norm = self.plane_norm / norm
-        
-
-    def transform_curr(self, transform):
-        scaled_transform = self.weight * transform
-        rot_mat = get_rotation(scaled_transform[0], scaled_transform[1], scaled_transform[2])
-        translation = scaled_transform[3:6]
-        undistorted_pt = np.transpose(rot_mat).dot(self.surf_p_ - translation.reshape(3,1))
-        return undistorted_pt
-    
-    def copy(self):
-        return PlaneFactor(self.keys()[0], self.surf_p_, self.p_a_, self.p_b_, self.p_c_, self.weight, self.lossFunction())
-    
-    def error(self, variables):
-        params = variables.at(self.keys()[0])
-        point_sel = self.transform_curr(params)
-        dist = np.dot(np.transpose(self.plane_norm),(point_sel - self.p_a_)) * self.weight
-        return np.array([dist[0][0]])
-
-    def jacobians(self, variables):
-        params = variables.at(self.keys()[0])
-        
-        srx = np.sin(params[0])
-        crx = np.cos(params[0])
-        sry = np.sin(params[1])
-        cry = np.cos(params[1])
-        srz = np.sin(params[2])
-        crz = np.cos(params[2])
-        tx = params[3]
-        ty = params[4]
-        tz = params[5]
-
-        J_d_transform = np.empty([1,6])
-        J_d_transform[0][0] = (-crx*sry*srz*self.surf_p_[0] + crx*crz*sry*self.surf_p_[1] + srx*sry*self.surf_p_[2] \
-                              + tx*crx*sry*srz - ty*crx*crz*sry - tz*srx*sry) * self.plane_norm[0] \
-                              + (srx*srz*self.surf_p_[0] - crz*srx*self.surf_p_[1] + crx*self.surf_p_[2] \
-                              + ty*crz*srx - tz*crx - tx*srx*srz) * self.plane_norm[1] \
-                              + (crx*cry*srz*self.surf_p_[0] - crx*cry*crz*self.surf_p_[1] - cry*srx*self.surf_p_[2] \
-                              + tz*cry*srx + ty*crx*cry*crz - tx*crx*cry*srz) * self.plane_norm[2]
-
-        J_d_transform[0][1] = ((-crz*sry - cry*srx*srz)*self.surf_p_[0] \
-                              + (cry*crz*srx - sry*srz)*self.surf_p_[1] - crx*cry*self.surf_p_[2] \
-                              + tx*(crz*sry + cry*srx*srz) + ty*(sry*srz - cry*crz*srx) \
-                              + tz*crx*cry) * self.plane_norm[0] \
-                              + ((cry*crz - srx*sry*srz)*self.surf_p_[0] \
-                              + (cry*srz + crz*srx*sry)*self.surf_p_[1] - crx*sry*self.surf_p_[2] \
-                              + tz*crx*sry - ty*(cry*srz + crz*srx*sry) \
-                              - tx*(cry*crz - srx*sry*srz)) * self.plane_norm[2]
-
-        J_d_transform[0][2] = ((-cry*srz - crz*srx*sry)*self.surf_p_[0] + (cry*crz - srx*sry*srz)*self.surf_p_[1] \
-                              + tx*(cry*srz + crz*srx*sry) - ty*(cry*crz - srx*sry*srz)) * self.plane_norm[0] \
-                              + (-crx*crz*self.surf_p_[0] - crx*srz*self.surf_p_[1] \
-                              + ty*crx*srz + tx*crx*crz) * self.plane_norm[1] \
-                              + ((cry*crz*srx - sry*srz)*self.surf_p_[0] + (crz*sry + cry*srx*srz)*self.surf_p_[1] \
-                              + tx*(sry*srz - cry*crz*srx) - ty*(crz*sry + cry*srx*srz)) * self.plane_norm[2]
-        
-        J_d_transform[0][3] = -(cry*crz - srx*sry*srz) * self.plane_norm[0] + crx*srz * self.plane_norm[1] \
-                              - (crz*sry + cry*srx*srz) * self.plane_norm[2]
-        J_d_transform[0][4] = -(cry*srz + crz*srx*sry) * self.plane_norm[0] - crx*crz * self.plane_norm[1] \
-                              - (sry*srz - cry*crz*srx) * self.plane_norm[2]
-        J_d_transform[0][5] = crx*sry * self.plane_norm[0] - srx * self.plane_norm[1] - crx*cry * self.plane_norm[2]
-        return [J_d_transform]
-
-class EdgeFactor(Factor):
-    def __init__(self, key, edge_pt, pt_a, pt_b, weight, loss):
-        Factor.__init__(self, 1, [key], loss)
-        self.edge_p_ = edge_pt.reshape(3,1)
-        self.p_a_ = pt_a.reshape(3,1)
-        self.p_b_ = pt_b.reshape(3,1)
-        self.weight = weight
-    
-    def transform_curr(self, transform):
-        scaled_transform = self.weight * transform
-        rot_mat = get_rotation(scaled_transform[0], scaled_transform[1], scaled_transform[2])
-        translation = scaled_transform[3:6]
-        undistorted_pt = np.transpose(rot_mat).dot(self.edge_p_ - translation.reshape(3,1))
-        return undistorted_pt
-    
-    def copy(self):
-        return EdgeFactor(self.keys()[0], self.edge_p_, self.p_a_, self.p_b_, self.weight, self.lossFunction())
-    
-    def error(self, variables):
-        params = variables.at(self.keys()[0])
-        point_sel = self.transform_curr(params)
-        edge_normal = np.cross((point_sel - self.p_a_), (point_sel - self.p_b_), axis=0)
-        ab_dist = np.linalg.norm(self.p_a_ - self.p_b_)
-        edge_norm = np.linalg.norm(edge_normal)
-        # print(np.array([edge_norm / ab_dist]))
-        return np.array([edge_norm / ab_dist])
-
-    def jacobians(self, variables):
-        params = variables.at(self.keys()[0])
-        point_sel = self.transform_curr(params)
-        edge_normal = np.cross((point_sel - self.p_a_), (point_sel - self.p_b_), axis=0)
-        ab = self.p_a_ - self.p_b_
-        ab_norm = np.linalg.norm(ab)
-        edge_norm = np.linalg.norm(edge_normal)
-        la = (ab[1]*edge_normal[2] + ab[2]*edge_normal[1]) / (ab_norm*edge_norm)
-        lb = -(ab[0]*edge_normal[2] - ab[2]*edge_normal[0]) / (ab_norm*edge_norm)
-        lc = -(ab[0]*edge_normal[1] + ab[1]*edge_normal[0]) / (ab_norm*edge_norm)
-        srx = np.sin(params[0])
-        crx = np.cos(params[0])
-        sry = np.sin(params[1])
-        cry = np.cos(params[1])
-        srz = np.sin(params[2])
-        crz = np.cos(params[2])
-        tx = params[3]
-        ty = params[4]
-        tz = params[5]
-
-        J_d_transform = np.empty([1,6])
-        J_d_transform[0][0] = (-crx*sry*srz*self.edge_p_[0] + crx*crz*sry*self.edge_p_[1] + srx*sry*self.edge_p_[2] \
-                              + tx*crx*sry*srz - ty*crx*crz*sry - tz*srx*sry) * la \
-                              + (srx*srz*self.edge_p_[0] - crz*srx*self.edge_p_[1] + crx*self.edge_p_[2] \
-                              + ty*crz*srx - tz*crx - tx*srx*srz) * lb \
-                              + (crx*cry*srz*self.edge_p_[0] - crx*cry*crz*self.edge_p_[1] - cry*srx*self.edge_p_[2] \
-                              + tz*cry*srx + ty*crx*cry*crz - tx*crx*cry*srz) * lc
-
-        J_d_transform[0][1] = ((-crz*sry - cry*srx*srz)*self.edge_p_[0] \
-                              + (cry*crz*srx - sry*srz)*self.edge_p_[1] - crx*cry*self.edge_p_[2] \
-                              + tx*(crz*sry + cry*srx*srz) + ty*(sry*srz - cry*crz*srx) \
-                              + tz*crx*cry) * la \
-                              + ((cry*crz - srx*sry*srz)*self.edge_p_[0] \
-                              + (cry*srz + crz*srx*sry)*self.edge_p_[1] - crx*sry*self.edge_p_[2] \
-                              + tz*crx*sry - ty*(cry*srz + crz*srx*sry) \
-                              - tx*(cry*crz - srx*sry*srz)) * lc
-
-        J_d_transform[0][2] = ((-cry*srz - crz*srx*sry)*self.edge_p_[0] + (cry*crz - srx*sry*srz)*self.edge_p_[1] \
-                              + tx*(cry*srz + crz*srx*sry) - ty*(cry*crz - srx*sry*srz)) * la \
-                              + (-crx*crz*self.edge_p_[0] - crx*srz*self.edge_p_[1] \
-                              + ty*crx*srz + tx*crx*crz) * lb \
-                              + ((cry*crz*srx - sry*srz)*self.edge_p_[0] + (crz*sry + cry*srx*srz)*self.edge_p_[1] \
-                              + tx*(sry*srz - cry*crz*srx) - ty*(crz*sry + cry*srx*srz)) * lc
-        
-        J_d_transform[0][3] = -(cry*crz - srx*sry*srz) * la + crx*srz * lb \
-                              - (crz*sry + cry*srx*srz) * lc
-        J_d_transform[0][4] = -(cry*srz + crz*srx*sry) * la - crx*crz * lb \
-                              - (sry*srz - cry*crz*srx) * lc
-        J_d_transform[0][5] = crx*sry * la - srx * lb - crx*cry * lc
-        return [J_d_transform]
+    def get_trans_list(self):
+        return self.trans_list
