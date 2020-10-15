@@ -36,18 +36,15 @@ class Odometry:
             angle -= 2*math.pi
         return angle
 
-    def grab_frame(self, cloud, feature_id):
-        corner_sharp = cloud[feature_id[0], :]
-        corner_less = cloud[feature_id[1], :]
-        surf_flat = cloud[feature_id[2], :]
-        surf_less = cloud[feature_id[3], :]
+    def grab_frame(self, cloud):
+        corner_sharp, corner_less, surf_flat, surf_less = self.feature_extractor.feature_extract(cloud)
+        # corner_sharp = cloud[feature_id[0], :]
+        # corner_less = cloud[feature_id[1], :]
+        # surf_flat = cloud[feature_id[2], :]
+        # surf_less = cloud[feature_id[3], :]
         is_degenerate = False
         if not self.init:
             self.init = True
-            surf_less_index = self.get_downsample_cloud(surf_less)
-            corner_less_index = self.get_downsample_cloud(corner_less)
-            self.surf_last = surf_less[surf_less_index, :]
-            self.corner_last = corner_less[corner_less_index, :]
         else:
             weight = 1.0
             P_mat = np.identity(6)
@@ -97,7 +94,11 @@ class Odometry:
             self.trans_w_curr = self.trans_w_curr + np.matmul(self.rot_w_curr, t_last_curr)
             self.rot_w_curr = self.rot_w_curr * R_last_curr
             self.trans_list.append(self.trans_w_curr)
-        
+
+        surf_less_index = self.get_downsample_cloud(surf_less)
+        corner_less_index = self.get_downsample_cloud(corner_less)
+        self.surf_last = surf_less[surf_less_index, :]
+        self.corner_last = corner_less[corner_less_index, :]
         self.transform = np.array([0., 0., 0., 0., 0., 0.])
         return self.trans_w_curr
 
@@ -250,6 +251,9 @@ class Odometry:
             norm = np.linalg.norm(plane_norm)
             plane_norm = plane_norm / norm
 
+            if norm < 1e-5:
+                continue
+
             B_mat[i, 0] = np.dot(np.transpose(plane_norm),(pt_sel - pt_a)) * weight
             A_mat[i, 0] = (-crx*sry*srz*pt[0] + crx*crz*sry*pt[1] + srx*sry*pt[2] \
                           + tx*crx*sry*srz - ty*crx*crz*sry - tz*srx*sry) * plane_norm[0] \
@@ -302,10 +306,14 @@ class Odometry:
             ab = pt_a - pt_b
             ab_norm = np.linalg.norm(ab)
             edge_norm = np.linalg.norm(edge_normal)
+
+            if edge_norm < 1e-5:
+                continue
+
             la = (ab[1]*edge_normal[2] + ab[2]*edge_normal[1]) / (ab_norm*edge_norm)
             lb = -(ab[0]*edge_normal[2] - ab[2]*edge_normal[0]) / (ab_norm*edge_norm)
             lc = -(ab[0]*edge_normal[1] + ab[1]*edge_normal[0]) / (ab_norm*edge_norm)
-
+            
             B_mat[i, 0] =  weight * (edge_norm / ab_norm)
             A_mat[i, 0] = (-crx*sry*srz*pt[0] + crx*crz*sry*pt[1] + srx*sry*pt[2] \
                           + tx*crx*sry*srz - ty*crx*crz*sry - tz*srx*sry) * la \
