@@ -6,10 +6,10 @@ import math
 class FeatureExtract:
     def __init__(self, config=None):
         self.config = config
-        self.LINE_NUM = 64
-        self.RING_INDEX = None
-        self.RING_INIT = False
-        self.THRES = 2
+        self.LINE_NUM = 16
+        self.RING_INDEX = 4 # None
+        self.RING_INIT = True # False
+        self.THRES = 0 # 2
         self.used_line_num = None
     
     def get_scan_id(self, cloud):
@@ -56,6 +56,7 @@ class FeatureExtract:
         curvatures = np.sum(np.square(curvatures), axis=1)
         scan_start_id = [np.where(cloud[:, self.RING_INDEX] == val)[0][0] + 5 for val in range(0, self.used_line_num)]
         scan_end_id = [np.where(cloud[:, self.RING_INDEX] == val)[0][-1] - 5 for val in range(0, self.used_line_num)]
+        import pdb; pdb.set_trace()
         return curvatures, scan_start_id, scan_end_id
 
     def remove_occluded(self, cloud):
@@ -74,10 +75,10 @@ class FeatureExtract:
                     depth_diff = cloud[i+1, :3] * (depth[i]/depth[i+1]) - cloud[i, :3]
                     depth_diff = np.sqrt(np.sum(np.square(depth_diff)))
                     if depth_diff/depth[i] < 0.1:
-                        picked_list[i+1:i+6] = 1
+                        picked_list[i+1:i+7] = 1
 
             diff_prev = np.sum(np.square(cloud[i, :3] - cloud[i-1, :3]))
-            if diff > 0.0002 * depth[i] and diff_prev > 0.0002 * depth[i]:
+            if diff > 0.0002 * depth[i] * depth[i] and diff_prev > 0.0002 * depth[i] * depth[i]:
                 picked_list[i] = 1
 
         return picked_list
@@ -97,13 +98,12 @@ class FeatureExtract:
             """ TODO: Avoid empty line """
             for i in range(6):
                 sp = int((scan_start_id[scan_id] * (6-i) + scan_end_id[scan_id] * i) / 6)
-                ep = int((scan_start_id[scan_id] * (5-i) + scan_end_id[scan_id] * (i+1)) / 6 + 1)
-
-                curv_seg = curv_index[sp:ep, :]
+                ep = int((scan_start_id[scan_id] * (5-i) + scan_end_id[scan_id] * (i+1)) / 6 - 1)
+                curv_seg = curv_index[sp:ep+1, :]
                 sorted_curv = curv_seg[np.argsort(curv_seg[:, 0])]
                 picked_num = 0
 
-                for j in range(ep-1, sp+1, -1):
+                for j in range(ep, sp-1, -1):
                     sorted_ind = j - sp
                     ind = int(sorted_curv[sorted_ind, 1])
                     curv = sorted_curv[sorted_ind, 0]
@@ -134,7 +134,7 @@ class FeatureExtract:
                             picked_list[ind+l] = 1
                 
                 picked_num = 0
-                for j in range(sp, ep):
+                for j in range(sp, ep+1):
                     sorted_ind = j - sp
                     ind = int(sorted_curv[sorted_ind, 1])
                     curv = sorted_curv[sorted_ind, 0]
@@ -160,7 +160,7 @@ class FeatureExtract:
                                 break
                             picked_list[ind+l] = 1
                 
-                for j in range(sp, ep):
+                for j in range(sp, ep+1):
                     sorted_ind = j - sp
                     ind = int(sorted_curv[sorted_ind, 1])
                     if cloud_labels[ind] <= 0:

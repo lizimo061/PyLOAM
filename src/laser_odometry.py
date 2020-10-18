@@ -18,7 +18,7 @@ class Odometry:
         self.trans_w_curr = np.zeros((3,1))
         self.transform = np.array([0., 0., 0., 0., 0., 0.]) # rx, ry, rz, tx, ty, tz
         # TODO: make below variables to config
-        self.DIST_THRES = 25
+        self.DIST_THRES = 5
         self.RING_INDEX = 4
         self.NEARBY_SCAN = 2.5
         self.OPTIM_ITERATION = 25
@@ -116,9 +116,9 @@ class Odometry:
             if dist[0] < self.DIST_THRES:
                 closest_ind = ind[0]
                 closest_scan_id = self.corner_last[ind[0], self.RING_INDEX]
-                min_sq_dist2 = self.DIST_THRES
+                min_sq_dist2 = self.DIST_THRES * self.DIST_THRES
 
-                for j in range(closest_ind+1, self.corner_last.shape[0]):
+                for j in range(closest_ind+1, corner_sharp.shape[0]):
                     if self.corner_last[j, self.RING_INDEX] <= closest_scan_id:
                         continue
                     if self.corner_last[j, self.RING_INDEX] > closest_scan_id + self.NEARBY_SCAN:
@@ -165,10 +165,10 @@ class Odometry:
             if dist[0] < self.DIST_THRES:
                 closest_ind = ind[0]
                 closest_scan_id = self.surf_last[ind[0], self.RING_INDEX]
-                min_sq_dist2 = self.DIST_THRES
-                min_sq_dist3 = self.DIST_THRES
+                min_sq_dist2 = self.DIST_THRES * self.DIST_THRES
+                min_sq_dist3 = self.DIST_THRES * self.DIST_THRES
                 
-                for j in range(closest_ind+1, self.surf_last.shape[0]):
+                for j in range(closest_ind+1, surf_flat.shape[0]):
                     if self.surf_last[j, self.RING_INDEX] > closest_scan_id + self.NEARBY_SCAN:
                         break
                     point_sq_dist = np.sum(np.square(self.surf_last[j, :3].reshape(3,1) - point_sel))
@@ -183,10 +183,10 @@ class Odometry:
                     if self.surf_last[j, self.RING_INDEX] < closest_scan_id - self.NEARBY_SCAN:
                         break
                     point_sq_dist = np.sum(np.square(self.surf_last[j, :3].reshape(3,1) - point_sel))
-                    if self.surf_last[j, self.RING_INDEX] <= closest_scan_id and point_sq_dist < min_sq_dist2:
+                    if self.surf_last[j, self.RING_INDEX] >= closest_scan_id and point_sq_dist < min_sq_dist2:
                         min_sq_dist2 = point_sq_dist
                         min_ind2 = j
-                    elif self.surf_last[j, self.RING_INDEX] > closest_scan_id and point_sq_dist < min_sq_dist3:
+                    elif self.surf_last[j, self.RING_INDEX] < closest_scan_id and point_sq_dist < min_sq_dist3:
                         min_sq_dist3 = point_sq_dist
                         min_ind3 = j
                 

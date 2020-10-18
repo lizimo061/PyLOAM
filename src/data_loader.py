@@ -47,3 +47,14 @@ class KittiLoader(DataLoader):
 
     def sort_files(self):
         self.file_list.sort(key=lambda file: int(file[:-4]))
+
+class NPYLoader(DataLoader):
+    def get_pc(self, index):
+        if index < self.scan_num:
+            scan = np.load(os.path.join(self.path, self.file_list[index]))
+            return scan
+        else:
+            print("Access out of range!")
+    
+    def sort_files(self):
+        self.file_list.sort(key=lambda file: int(file[:-4]))
