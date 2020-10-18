@@ -56,7 +56,6 @@ class FeatureExtract:
         curvatures = np.sum(np.square(curvatures), axis=1)
         scan_start_id = [np.where(cloud[:, self.RING_INDEX] == val)[0][0] + 5 for val in range(0, self.used_line_num)]
         scan_end_id = [np.where(cloud[:, self.RING_INDEX] == val)[0][-1] - 5 for val in range(0, self.used_line_num)]
-        import pdb; pdb.set_trace()
         return curvatures, scan_start_id, scan_end_id
 
     def remove_occluded(self, cloud):
