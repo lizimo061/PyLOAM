@@ -7,9 +7,9 @@ class FeatureExtract:
     def __init__(self, config=None):
         self.config = config
         self.LINE_NUM = 16
-        self.RING_INDEX = 4 # None
-        self.RING_INIT = True # False
-        self.THRES = 0 # 2
+        self.RING_INDEX = None
+        self.RING_INIT = False
+        self.THRES = 2
         self.used_line_num = None
     
     def get_scan_id(self, cloud):
