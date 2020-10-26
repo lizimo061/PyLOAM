@@ -3,7 +3,6 @@ import open3d as o3d
 from feature_extract import FeatureExtract
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
-from minisam import *
 from utils import *
 import math
 
@@ -17,6 +16,7 @@ class Odometry:
         self.rot_w_curr = np.eye(3)
         self.trans_w_curr = np.zeros((3,1))
         self.transform = np.array([0., 0., 0., 0., 0., 0.]) # rx, ry, rz, tx, ty, tz
+        self.frame_count = 0
         # TODO: make below variables to config
         self.DIST_THRES = 5
         self.RING_INDEX = 4
@@ -46,12 +46,8 @@ class Odometry:
         if not self.init:
             self.init = True
         else:
-            weight = 1.0
             P_mat = np.identity(6)
-            if self.USE_ROBUST_LOSS:
-                loss = HuberLoss.Huber(1.0)
-            else:
-                loss = None
+
             for opt_iter in range(self.OPTIM_ITERATION):
                 if opt_iter % 5 == 0:
                     corner_points, corner_points_a, corner_points_b = self.get_corner_correspondences(corner_sharp)
@@ -61,7 +57,6 @@ class Odometry:
 
                 A_mat = np.vstack((edge_A, surf_A))
                 B_mat = np.vstack((edge_B, surf_B)) * -0.05 # Reference to original LOAM
-
                 AtA = np.matmul(A_mat.transpose(), A_mat)
                 AtB = np.matmul(A_mat.transpose(), B_mat)
                 X_mat = np.linalg.solve(AtA, AtB)
@@ -84,7 +79,8 @@ class Odometry:
                 self.transform += np.squeeze(X_mat)
 
                 delta_r = np.linalg.norm(np.rad2deg(X_mat[:3]))
-                delta_t = np.linalg.norm(X_mat[4:] * 100)
+                delta_t = np.linalg.norm(X_mat[3:] * 100)
+                print("{} frame, {} iter, [{},{},{}] delta translation".format(self.frame_count, opt_iter, self.transform[3], self.transform[4], self.transform[5]))
                 if delta_r < 0.1 and delta_t < 0.1:
                     print("Delta too small.")
                     break
@@ -95,11 +91,22 @@ class Odometry:
             self.rot_w_curr = self.rot_w_curr * R_last_curr
             self.trans_list.append(self.trans_w_curr)
 
+            # Transform surf_less and corner_less to the end
+            for i in range(surf_less.shape[0]):
+                surf_less[i, :3] = self.transform_to_end(surf_less[i, :3], surf_less[i, -1]).T
+            for i in range(corner_less.shape[0]):
+                corner_less[i, :3] = self.transform_to_end(corner_less[i, :3], corner_less[i, -1]).T
+
+            # Debug
+            out_cloud = np.vstack((surf_less, corner_less))
+            np.savetxt(str(self.frame_count)+'_end.txt', out_cloud)
+
         surf_less_index = self.get_downsample_cloud(surf_less)
         corner_less_index = self.get_downsample_cloud(corner_less)
         self.surf_last = surf_less[surf_less_index, :]
         self.corner_last = corner_less[corner_less_index, :]
         self.transform = np.array([0., 0., 0., 0., 0., 0.])
+        self.frame_count += 1
         return self.trans_w_curr
 
     def get_corner_correspondences(self, corner_sharp):
@@ -109,7 +116,7 @@ class Odometry:
         corner_last_tree = o3d.geometry.KDTreeFlann(np.transpose(self.corner_last[:, :3]))
 
         for i in range(corner_sharp.shape[0]):
-            point_sel = self.transform_to_start(corner_sharp[i, :3])
+            point_sel = self.transform_to_start(corner_sharp[i, :3], corner_sharp[i, -1])
             [_, ind, dist] = corner_last_tree.search_knn_vector_3d(point_sel, 1)
             closest_ind = -1
             min_ind2 = -1
@@ -144,9 +151,9 @@ class Odometry:
                     ab_dist = np.sum(np.square(self.surf_last[min_ind2, :3]-self.surf_last[closest_ind, :3]))
                     if ab_dist < 1e-3:
                         continue
-                    curr_points.append(corner_sharp[i, :3])
-                    points_a.append(self.corner_last[closest_ind, :3])
-                    points_b.append(self.corner_last[min_ind2, :3])
+                    curr_points.append(corner_sharp[i, :])
+                    points_a.append(self.corner_last[closest_ind, :])
+                    points_b.append(self.corner_last[min_ind2, :])
         
         return curr_points, points_a, points_b
 
@@ -157,7 +164,7 @@ class Odometry:
         points_c = []
         surf_last_tree = o3d.geometry.KDTreeFlann(np.transpose(self.surf_last[:, :3]))
         for i in range(surf_flat.shape[0]):
-            point_sel = self.transform_to_start(surf_flat[i,:3])
+            point_sel = self.transform_to_start(surf_flat[i,:3], surf_flat[i, -1])
             [_, ind, dist] = surf_last_tree.search_knn_vector_3d(point_sel, 1)
             closest_ind = -1
             min_ind2 = -1 
@@ -195,10 +202,10 @@ class Odometry:
                     ac_dist = np.sum(np.square(self.surf_last[min_ind3, :3]-self.surf_last[closest_ind, :3]))
                     if ab_dist < 1e-3 or ac_dist < 1e-3:
                         continue
-                    curr_points.append(surf_flat[i, :3])
-                    points_a.append(self.surf_last[closest_ind, :3])
-                    points_b.append(self.surf_last[min_ind2, :3])
-                    points_c.append(self.surf_last[min_ind3, :3])
+                    curr_points.append(surf_flat[i, :])
+                    points_a.append(self.surf_last[closest_ind, :])
+                    points_b.append(self.surf_last[min_ind2, :])
+                    points_c.append(self.surf_last[min_ind3, :])
 
         return curr_points, points_a, points_b, points_c
 
@@ -211,26 +218,29 @@ class Odometry:
         index_ds = [cubic_index[0] for cubic_index in out[2]]
         return index_ds
 
-    def transform_to_start(self, pt):
-        s = 1.0
-        if self.DISTORTION:
-            s = 0.5  # TODO: hard code
+    def transform_to_start(self, pt, s=1.0):
         scaled_transform = s * self.transform
         rot_mat = get_rotation(scaled_transform[0], scaled_transform[1], scaled_transform[2])
         translation = scaled_transform[3:6]
-        undistorted_pt = np.transpose(rot_mat).dot(pt.reshape(3,1) - translation.reshape(3,1))
+
+        if len(pt.shape) == 1:
+            pt = pt.reshape(3,-1)
+        if pt.shape[0] != 3:
+            pt = pt.T
+
+        undistorted_pt = np.transpose(rot_mat).dot(pt - translation.reshape(3,1))
         return undistorted_pt
 
-    def transfrom_to_end(self, pt):
-        un_point = self.transform_to_start(pt)
+    def transform_to_end(self, pt, s=1.0):
+        un_point = self.transform_to_start(pt, s)
         rot_mat = get_rotation(self.transform[0], self.transform[1], self.transform[2])
         translation = self.transform[3:6]
-        pt_end = rot_mat.T.dot(un_point) + translation
+        pt_end = rot_mat.T.dot(un_point) + translation.reshape(3,1)
         return pt_end
 
-    def get_plane_mat(self, surf_points, surf_points_a, surf_points_b, surf_points_c, weight):
-        A_mat = np.empty([len(surf_points), 6])
-        B_mat = np.empty([len(surf_points), 1])
+    def get_plane_mat(self, surf_points, surf_points_a, surf_points_b, surf_points_c, iter_num):
+        A_mat = []
+        B_mat = []
 
         srx = np.sin(self.transform[0])
         crx = np.cos(self.transform[0])
@@ -241,27 +251,39 @@ class Odometry:
         tx = self.transform[3]
         ty = self.transform[4]
         tz = self.transform[5]
+
+        weight = 1.0
+
         for i in range(len(surf_points)):
-            pt = surf_points[i].reshape(3,1)
-            pt_a = surf_points_a[i].reshape(3,1)
-            pt_b = surf_points_b[i].reshape(3,1)
-            pt_c = surf_points_c[i].reshape(3,1)
-            pt_sel = self.transform_to_start(pt)
+            s = surf_points[i][-1]
+            pt = surf_points[i][:3].reshape(3,1)
+            pt_a = surf_points_a[i][:3].reshape(3,1)
+            pt_b = surf_points_b[i][:3].reshape(3,1)
+            pt_c = surf_points_c[i][:3].reshape(3,1)
+            pt_sel = self.transform_to_start(pt, s)
             plane_norm = np.cross((pt_a - pt_b), (pt_a - pt_c), axis=0)
             norm = np.linalg.norm(plane_norm)
             plane_norm = plane_norm / norm
+            dist = np.dot(np.transpose(plane_norm),(pt_sel - pt_a))
 
-            if norm < 1e-5:
+            if iter_num >= 5:
+                weight = 1 - 1.8 * abs(dist) / np.sqrt(np.linalg.norm(pt_sel))
+
+            if norm < 1e-5 or weight <= 0.1:
                 continue
+            
+            plane_norm = weight * plane_norm
+            A_tmp = np.zeros((1,6))
+            B_tmp = np.zeros((1,1))
 
-            B_mat[i, 0] = np.dot(np.transpose(plane_norm),(pt_sel - pt_a)) * weight
-            A_mat[i, 0] = (-crx*sry*srz*pt[0] + crx*crz*sry*pt[1] + srx*sry*pt[2] \
+            B_tmp[0, 0] = dist * weight
+            A_tmp[0, 0] = (-crx*sry*srz*pt[0] + crx*crz*sry*pt[1] + srx*sry*pt[2] \
                           + tx*crx*sry*srz - ty*crx*crz*sry - tz*srx*sry) * plane_norm[0] \
                           + (srx*srz*pt[0] - crz*srx*pt[1] + crx*pt[2] \
                           + ty*crz*srx - tz*crx - tx*srx*srz) * plane_norm[1] \
                           + (crx*cry*srz*pt[0] - crx*cry*crz*pt[1] - cry*srx*pt[2] \
                           + tz*cry*srx + ty*crx*cry*crz - tx*crx*cry*srz) * plane_norm[2]
-            A_mat[i, 1] = ((-crz*sry - cry*srx*srz)*pt[0] \
+            A_tmp[0, 1] = ((-crz*sry - cry*srx*srz)*pt[0] \
                           + (cry*crz*srx - sry*srz)*pt[1] - crx*cry*pt[2] \
                           + tx*(crz*sry + cry*srx*srz) + ty*(sry*srz - cry*crz*srx) \
                           + tz*crx*cry) * plane_norm[0] \
@@ -269,23 +291,29 @@ class Odometry:
                           + (cry*srz + crz*srx*sry)*pt[1] - crx*sry*pt[2] \
                           + tz*crx*sry - ty*(cry*srz + crz*srx*sry) \
                           - tx*(cry*crz - srx*sry*srz)) * plane_norm[2]
-            A_mat[i, 2] = ((-cry*srz - crz*srx*sry)*pt[0] + (cry*crz - srx*sry*srz)*pt[1] \
+            A_tmp[0, 2] = ((-cry*srz - crz*srx*sry)*pt[0] + (cry*crz - srx*sry*srz)*pt[1] \
                           + tx*(cry*srz + crz*srx*sry) - ty*(cry*crz - srx*sry*srz)) * plane_norm[0] \
                           + (-crx*crz*pt[0] - crx*srz*pt[1] \
                           + ty*crx*srz + tx*crx*crz) * plane_norm[1] \
                           + ((cry*crz*srx - sry*srz)*pt[0] + (crz*sry + cry*srx*srz)*pt[1] \
                           + tx*(sry*srz - cry*crz*srx) - ty*(crz*sry + cry*srx*srz)) * plane_norm[2]
-            A_mat[i, 3] = -(cry*crz - srx*sry*srz) * plane_norm[0] + crx*srz * plane_norm[1] \
+            A_tmp[0, 3] = -(cry*crz - srx*sry*srz) * plane_norm[0] + crx*srz * plane_norm[1] \
                           - (crz*sry + cry*srx*srz) * plane_norm[2]
-            A_mat[i, 4] = -(cry*srz + crz*srx*sry) * plane_norm[0] - crx*crz * plane_norm[1] \
+            A_tmp[0, 4] = -(cry*srz + crz*srx*sry) * plane_norm[0] - crx*crz * plane_norm[1] \
                           - (sry*srz - cry*crz*srx) * plane_norm[2]
-            A_mat[i, 5] = crx*sry * plane_norm[0] - srx * plane_norm[1] - crx*cry * plane_norm[2]
+            A_tmp[0, 5] = crx*sry * plane_norm[0] - srx * plane_norm[1] - crx*cry * plane_norm[2]
+
+            A_mat.append(A_tmp)
+            B_mat.append(B_tmp)
+        
+        A_mat = np.vstack(A_mat)
+        B_mat = np.vstack(B_mat)
 
         return A_mat, B_mat
 
-    def get_edge_mat(self, corner_points, corner_points_a, corner_points_b, weight):
-        A_mat = np.empty([len(corner_points), 6])
-        B_mat = np.empty([len(corner_points), 1])
+    def get_edge_mat(self, corner_points, corner_points_a, corner_points_b, iter_num):
+        A_mat = []
+        B_mat = []
 
         srx = np.sin(self.transform[0])
         crx = np.cos(self.transform[0])
@@ -297,31 +325,40 @@ class Odometry:
         ty = self.transform[4]
         tz = self.transform[5]
 
+        weight = 1.0
+
         for i in range(len(corner_points)):
-            pt = corner_points[i].reshape(3,1)
-            pt_a = corner_points_a[i].reshape(3,1)
-            pt_b = corner_points_b[i].reshape(3,1)
-            pt_sel = self.transform_to_start(pt)
+            s = corner_points[i][-1]
+            pt = corner_points[i][:3].reshape(3,1)
+            pt_a = corner_points_a[i][:3].reshape(3,1)
+            pt_b = corner_points_b[i][:3].reshape(3,1)
+            pt_sel = self.transform_to_start(pt, s)
             edge_normal = np.cross((pt_sel - pt_a), (pt_sel - pt_b), axis=0)
             ab = pt_a - pt_b
             ab_norm = np.linalg.norm(ab)
             edge_norm = np.linalg.norm(edge_normal)
 
-            if edge_norm < 1e-5:
+            if iter_num >= 5:
+                weight = 1 - 1.8 * abs(edge_norm / ab_norm)
+
+            if edge_norm < 1e-5 or weight <= 0.1:
                 continue
 
-            la = (ab[1]*edge_normal[2] + ab[2]*edge_normal[1]) / (ab_norm*edge_norm)
-            lb = -(ab[0]*edge_normal[2] - ab[2]*edge_normal[0]) / (ab_norm*edge_norm)
-            lc = -(ab[0]*edge_normal[1] + ab[1]*edge_normal[0]) / (ab_norm*edge_norm)
+            la = weight * (ab[1]*edge_normal[2] + ab[2]*edge_normal[1]) / (ab_norm*edge_norm)
+            lb = -weight * (ab[0]*edge_normal[2] - ab[2]*edge_normal[0]) / (ab_norm*edge_norm)
+            lc = -weight * (ab[0]*edge_normal[1] + ab[1]*edge_normal[0]) / (ab_norm*edge_norm)
+
+            A_tmp = np.zeros((1,6))
+            B_tmp = np.zeros((1,1))
             
-            B_mat[i, 0] =  weight * (edge_norm / ab_norm)
-            A_mat[i, 0] = (-crx*sry*srz*pt[0] + crx*crz*sry*pt[1] + srx*sry*pt[2] \
+            B_tmp[0, 0] =  weight * (edge_norm / ab_norm)
+            A_tmp[0, 0] = (-crx*sry*srz*pt[0] + crx*crz*sry*pt[1] + srx*sry*pt[2] \
                           + tx*crx*sry*srz - ty*crx*crz*sry - tz*srx*sry) * la \
                           + (srx*srz*pt[0] - crz*srx*pt[1] + crx*pt[2] \
                           + ty*crz*srx - tz*crx - tx*srx*srz) * lb \
                           + (crx*cry*srz*pt[0] - crx*cry*crz*pt[1] - cry*srx*pt[2] \
                           + tz*cry*srx + ty*crx*cry*crz - tx*crx*cry*srz) * lc
-            A_mat[i, 1] = ((-crz*sry - cry*srx*srz)*pt[0] \
+            A_tmp[0, 1] = ((-crz*sry - cry*srx*srz)*pt[0] \
                           + (cry*crz*srx - sry*srz)*pt[1] - crx*cry*pt[2] \
                           + tx*(crz*sry + cry*srx*srz) + ty*(sry*srz - cry*crz*srx) \
                           + tz*crx*cry) * la \
@@ -329,17 +366,23 @@ class Odometry:
                           + (cry*srz + crz*srx*sry)*pt[1] - crx*sry*pt[2] \
                           + tz*crx*sry - ty*(cry*srz + crz*srx*sry) \
                           - tx*(cry*crz - srx*sry*srz)) * lc
-            A_mat[i, 2] = ((-cry*srz - crz*srx*sry)*pt[0] + (cry*crz - srx*sry*srz)*pt[1] \
+            A_tmp[0, 2] = ((-cry*srz - crz*srx*sry)*pt[0] + (cry*crz - srx*sry*srz)*pt[1] \
                           + tx*(cry*srz + crz*srx*sry) - ty*(cry*crz - srx*sry*srz)) * la \
                           + (-crx*crz*pt[0] - crx*srz*pt[1] \
                           + ty*crx*srz + tx*crx*crz) * lb \
                           + ((cry*crz*srx - sry*srz)*pt[0] + (crz*sry + cry*srx*srz)*pt[1] \
                           + tx*(sry*srz - cry*crz*srx) - ty*(crz*sry + cry*srx*srz)) * lc
-            A_mat[i, 3] = -(cry*crz - srx*sry*srz) * la + crx*srz * lb \
+            A_tmp[0, 3] = -(cry*crz - srx*sry*srz) * la + crx*srz * lb \
                           - (crz*sry + cry*srx*srz) * lc
-            A_mat[i, 4] = -(cry*srz + crz*srx*sry) * la - crx*crz * lb \
+            A_tmp[0, 4] = -(cry*srz + crz*srx*sry) * la - crx*crz * lb \
                           - (sry*srz - cry*crz*srx) * lc
-            A_mat[i, 5] = crx*sry * la - srx * lb - crx*cry * lc
+            A_tmp[0, 5] = crx*sry * la - srx * lb - crx*cry * lc
+
+            A_mat.append(A_tmp)
+            B_mat.append(B_tmp)
+        
+        A_mat = np.vstack(A_mat)
+        B_mat = np.vstack(B_mat)
 
         return A_mat, B_mat
 

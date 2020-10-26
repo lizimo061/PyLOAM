@@ -7,9 +7,9 @@ class FeatureExtract:
     def __init__(self, config=None):
         self.config = config
         self.LINE_NUM = 16
-        self.RING_INDEX = None
-        self.RING_INIT = False
-        self.THRES = 2
+        self.RING_INDEX = 4 #None
+        self.RING_INIT = True #False
+        self.THRES = 0.2 #2
         self.used_line_num = None
     
     def get_scan_id(self, cloud):
@@ -35,6 +35,36 @@ class FeatureExtract:
         cloud = cloud[correct_id]
         scan_ids = np.expand_dims(scan_ids, axis=1)
         return cloud, scan_ids    
+
+    def get_rel_time(self, cloud):
+        start_ori = -np.arctan2(cloud[0, 1], cloud[0, 0])
+        end_ori = -np.arctan2(cloud[-1, 1], cloud[-1, 0])
+        if end_ori - start_ori > 3 * math.pi:
+            end_ori -= 2*math.pi
+        elif end_ori - start_ori < math.pi:
+            end_ori += 2*math.pi
+
+        half_passed = False
+        rel_time = np.zeros(cloud.shape[0])
+
+        for i in range(cloud.shape[0]):
+            pt = np.array([cloud[i, 1], cloud[i, 2], cloud[i, 0]])
+            ori = -np.arctan2(pt[0], pt[2])
+            if not half_passed:
+                if ori < start_ori - math.pi/2:
+                    ori += 2*math.pi
+                elif ori > start_ori + math.pi*3/2:
+                    ori -= 2*math.pi
+                if ori - start_ori > math.pi:
+                    half_passed = True
+            else:
+                ori += 2*math.pi
+                if ori < end_ori - math.pi *3/2:
+                    ori += 2*math.pi
+                elif ori > end_ori + math.pi/2:
+                    ori -= 2*math.pi
+            rel_time[i] = (ori - start_ori)/(end_ori - start_ori)
+        return rel_time
 
     def remove_close_points(self, cloud, thres):
         """ Input size: N*3 """
@@ -172,7 +202,9 @@ class FeatureExtract:
             cloud, line_id = self.get_scan_id(cloud)
             cloud = np.hstack((cloud, line_id.astype(np.float32)))
             self.RING_INDEX = cloud.shape[1]-1
-
+        rel_time = self.get_rel_time(cloud)
+        rel_time = np.expand_dims(rel_time, axis=1)
+        cloud = np.hstack((cloud, rel_time))
         cloud = self.remove_close_points(cloud, self.THRES)
         cloud = self.divide_lines(cloud)
         curvatures, scan_start_id, scan_end_id = self.compute_curvatures(cloud)
