@@ -57,6 +57,11 @@ class Odometry:
 
                 A_mat = np.vstack((edge_A, surf_A))
                 B_mat = np.vstack((edge_B, surf_B)) * -0.05 # Reference to original LOAM
+
+                if A_mat.shape[0] < 10:
+                    print('Warning: too few matches')
+                    continue
+ 
                 AtA = np.matmul(A_mat.transpose(), A_mat)
                 AtB = np.matmul(A_mat.transpose(), B_mat)
                 X_mat = np.linalg.solve(AtA, AtB)
@@ -306,8 +311,12 @@ class Odometry:
             A_mat.append(A_tmp)
             B_mat.append(B_tmp)
         
-        A_mat = np.vstack(A_mat)
-        B_mat = np.vstack(B_mat)
+        if len(A_mat) != 0 and len(B_mat) !=0:
+            A_mat = np.vstack(A_mat)
+            B_mat = np.vstack(B_mat)
+        else:
+            A_mat = np.zeros((0,6))
+            B_mat = np.zeros((0,1))
 
         return A_mat, B_mat
 
@@ -381,8 +390,12 @@ class Odometry:
             A_mat.append(A_tmp)
             B_mat.append(B_tmp)
         
-        A_mat = np.vstack(A_mat)
-        B_mat = np.vstack(B_mat)
+        if len(A_mat) != 0 and len(B_mat) !=0:
+            A_mat = np.vstack(A_mat)
+            B_mat = np.vstack(B_mat)
+        else:
+            A_mat = np.zeros((0,6))
+            B_mat = np.zeros((0,1))
 
         return A_mat, B_mat
 
