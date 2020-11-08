@@ -90,10 +90,16 @@ class Odometry:
                     print("Delta too small.")
                     break
 
-            R_last_curr = get_rotation(self.transform[0], self.transform[1], self.transform[2])
-            t_last_curr = -np.matmul(R_last_curr, self.transform[3:].reshape(3,1))
-            self.trans_w_curr = self.trans_w_curr + np.matmul(self.rot_w_curr, t_last_curr)
-            self.rot_w_curr = self.rot_w_curr * R_last_curr
+            T_last_curr = np.eye(4)
+            T_w_last = np.eye(4)
+            T_last_curr[0:3, 0:3] = get_rotation(self.transform[0], self.transform[1], self.transform[2]).T
+            T_last_curr[0:3, 3] = -np.matmul(T_last_curr[0:3, 0:3], self.transform[3:].reshape(3,1)).reshape(3)
+            T_w_last[0:3, 0:3] = self.rot_w_curr
+            T_w_last[0:3, 3] = self.trans_w_curr.reshape(3)
+            T_w_curr = np.matmul(T_w_last, T_last_curr)
+
+            self.rot_w_curr = T_w_curr[0:3, 0:3]
+            self.trans_w_curr = T_w_curr[0:3, 3].reshape(3,1)
             self.trans_list.append(self.trans_w_curr)
 
             # Transform surf_less and corner_less to the end
@@ -104,7 +110,10 @@ class Odometry:
 
             # Debug
             out_cloud = np.vstack((surf_less, corner_less))
-            np.savetxt(str(self.frame_count)+'_end.txt', out_cloud)
+            out_cloud_w = np.matmul(self.rot_w_curr, out_cloud[:, :3].T) + self.trans_w_curr
+            # np.savetxt(str(self.frame_count)+'_end.txt', out_cloud)
+            np.savetxt(str(self.frame_count)+'_world.txt', out_cloud_w.T)
+
 
         surf_less_index = self.get_downsample_cloud(surf_less)
         corner_less_index = self.get_downsample_cloud(corner_less)
@@ -240,7 +249,7 @@ class Odometry:
         un_point = self.transform_to_start(pt, s)
         rot_mat = get_rotation(self.transform[0], self.transform[1], self.transform[2])
         translation = self.transform[3:6]
-        pt_end = rot_mat.T.dot(un_point) + translation.reshape(3,1)
+        pt_end = rot_mat.dot(un_point) + translation.reshape(3,1)
         return pt_end
 
     def get_plane_mat(self, surf_points, surf_points_a, surf_points_b, surf_points_c, iter_num):
