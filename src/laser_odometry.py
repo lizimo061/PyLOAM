@@ -47,6 +47,8 @@ class Odometry:
             self.init = True
         else:
             P_mat = np.identity(6)
+            if self.surf_last.shape[0] < 100 or self.corner_last.shape[0] < 10:
+                return None
 
             for opt_iter in range(self.OPTIM_ITERATION):
                 if opt_iter % 5 == 0:
@@ -85,11 +87,12 @@ class Odometry:
 
                 delta_r = np.linalg.norm(np.rad2deg(X_mat[:3]))
                 delta_t = np.linalg.norm(X_mat[3:] * 100)
-                print("{} frame, {} iter, [{},{},{}] delta translation".format(self.frame_count, opt_iter, self.transform[3], self.transform[4], self.transform[5]))
+                # print("{} frame, {} iter, [{},{},{}] delta translation".format(self.frame_count, opt_iter, self.transform[3], self.transform[4], self.transform[5]))
                 if delta_r < 0.1 and delta_t < 0.1:
                     print("Delta too small.")
                     break
 
+            print("Transform: ", self.transform)
             T_last_curr = np.eye(4)
             T_w_last = np.eye(4)
             T_last_curr[0:3, 0:3] = get_rotation(self.transform[0], self.transform[1], self.transform[2]).T
@@ -119,7 +122,6 @@ class Odometry:
         corner_less_index = self.get_downsample_cloud(corner_less)
         self.surf_last = surf_less[surf_less_index, :]
         self.corner_last = corner_less[corner_less_index, :]
-        self.transform = np.array([0., 0., 0., 0., 0., 0.])
         self.frame_count += 1
         return self.trans_w_curr
 
