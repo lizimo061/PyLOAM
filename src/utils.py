@@ -15,3 +15,12 @@ def downsample_filter(cloud, voxel_size):
     index_ds = [cubic_index[0] for cubic_index in out[2]]
     cloud_ds = cloud[index_ds, :]
     return index_ds, cloud_ds
+
+def get_mean_cov(cloud):
+    """
+        Assuming N by 3 input
+    """
+    o3d_cloud = o3d.geometry.PointCloud()
+    o3d_cloud.points = o3d.utility.Vector3dVector(cloud[:, :3])
+    mean_cov = o3d_cloud.compute_mean_and_covariance()
+    return mean_cov[0], mean_cov[1]

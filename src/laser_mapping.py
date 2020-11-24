@@ -25,10 +25,21 @@ class Mapper:
         self.cloud_corner_array = None
         self.cloud_surf_array = None
 
-    def transform_associate_to_map(self, rot_wodom_curr, trans_wodom_curr)
+        self.rot_wodom_curr = np.eye(3)
+        self.trans_wodom_curr = np.zeros(3,1)
+        self.rot_wmap_wodom = np.eye(3)
+        self.trans_wmap_wodom = np.eye(3)
+        self.rot_w_curr = np.eye(3)
+        self.trans_w_curr = np.zeros(3,1)
+
+    def transform_associate_to_map(self, rot_wodom_curr, trans_wodom_curr):
         rot_w_curr = np.matmul(self.rot_wmap_wodom, rot_wodom_curr)
         trans_w_curr = np.matmul(self.rot_wmap_wodom, trans_wodom_curr) + self.trans_wmap_wodom
         return rot_w_curr, trans_w_curr
+
+    def point_associate_to_map(self, pt):
+        pt_out = np.matmul(self.rot_w_curr, pt.reshape(3, 1)) + self.trans_w_curr.reshape(3, 1)
+        return pt_out
 
     def map_frame(self, odom, corner_last, surf_last):
         rot_w_curr, trans_w_curr = self.transform_associate_to_map(rot_wodom_curr, trans_wodom_curr)
@@ -125,7 +136,33 @@ class Mapper:
             surf_map_tree = o3d.geometry.KDTreeFlann(np.transpose(surf_from_map[:, :3]))
 
             for iter_num in range(10):
-                #TODO: Find matches and get transformation
+                
+                # Find corner correspondences
+                for i in range(corner_last_ds.shape[0]):
+                    point_sel = self.point_associate_to_map(corner_last_ds[i, :3])
+                    [_, ind, dist] = corner_map_tree.search_knn_vector_3d(point_sel, 5)
+
+                    if dist[4] < 1.0:
+                        mean, cov = get_mean_cov(corner_from_map[ind, :3])
+                        vals, vecs = np.linalg.eig(cov)
+                        idx = vals.argsort() # Sort ascending
+                        vals = vals[idx]
+                        vecs = vecs[:, idx]
+
+                        if vals[2] > 3 * vals[1]:
+                            point_a = center + 0.1 * vecs[:, 2]
+                            point_b = center - 0.1 * vecs[:, 2]
+
+                            # TODO: Add residual
+                    
+                for i in range(surf_last_ds.shape[0]):
+                    point_sel = self.point_associate_to_map(surf_last_ds[i, :3])
+                    [_, ind, dist] = surf_map_tree.search_knn_vector_3d(point_sel, 5)
+
+                    if dist[4] < 1.0:
+                        # TODO: Add plane residual
+
+
 
 
 
