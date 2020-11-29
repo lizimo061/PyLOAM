@@ -22,8 +22,9 @@ class Mapper:
         self.valid_index = [-1] * 125
         self.surround_index = [-1] * 125
 
-        self.cloud_corner_array = [None] * self.CUBE_NUM
-        self.cloud_surf_array = [None] * self.CUBE_NUM
+        self.cloud_corner_array = [[] for i in range(self.CUBE_NUM)]]
+        self.cloud_surf_array = [[] for i in range(self.CUBE_NUM)]]
+        self.frame_count = 0
 
         self.rot_wodom_curr = np.eye(3)
         self.trans_wodom_curr = np.zeros(3,1)
@@ -63,24 +64,50 @@ class Mapper:
         while cube_center_i < 3:
             for j in range(self.CLOUD_HEIGHT):
                 for k in range(self.CLOUD_DEPTH):
-                    pass
-                    # TODO: Move the cube
-            
+                    i = self.CLOUD_WIDTH - 1
+                    ind = j * self.CLOUD_WIDTH + k * self.CLOUD_WIDTH * self.CLOUD_HEIGHT
+                    corner_tmp = self.cloud_corner_array[i+ind]
+                    surf_tmp = self.cloud_surf_array[i+ind]
+
+                    for tmp in range(i, 0, -1):
+                        self.cloud_corner_array[tmp+ind] = self.cloud_corner_array[tmp+ind-1]
+                        self.cloud_surf_array[tmp+ind] = self.cloud_surf_array[tmp+ind-1]
+                    self.cloud_corner_array[ind] = corner_tmp
+                    self.cloud_surf_array[ind] = surf_tmp
+
             cube_center_i += 1
             self.cloud_center_width += 1
         
         while cube_center_i >= self.CLOUD_WIDTH - 3:
             for j in range(self.CLOUD_HEIGHT):
                 for k in range(self.CLOUD_DEPTH):
-                    pass
-            
+                    i = 0
+                    ind = j * self.CLOUD_WIDTH + k * self.CLOUD_WIDTH * self.CLOUD_HEIGHT
+                    corner_tmp = self.cloud_corner_array[i+ind]
+                    surf_tmp = self.cloud_surf_array[i+ind]
+
+                    for tmp in range(0, self.CLOUD_WIDTH-1):
+                        self.cloud_corner_array[tmp+ind] = self.cloud_corner_array[tmp+ind+1]
+                        self.cloud_surf_array[tmp+ind] = self.cloud_surf_array[tmp+ind+1]
+                    self.cloud_corner_array[ind + self.CLOUD_WIDTH - 1] = corner_tmp
+                    self.cloud_surf_array[ind + self.CLOUD_WIDTH - 1] = surf_tmp
+
             cube_center_i -= 1
             self.cloud_center_width -= 1
 
         while cube_center_j < 3:
             for i in range(self.CLOUD_WIDTH):
                 for k in range(self.CLOUD_DEPTH):
-                    pass
+                    j = self.CLOUD_HEIGHT - 1
+                    ind = i + k * self.CLOUD_WIDTH * self.CLOUD_HEIGHT
+                    corner_tmp = self.cloud_corner_array[j * self.CLOUD_WIDTH + ind]
+                    surf_tmp = self.cloud_surf_array[j * self.CLOUD_WIDTH + ind]
+
+                    for tmp in range(j, 0, -1):
+                        self.cloud_corner_array[tmp*self.CLOUD_WIDTH+ind] = self.cloud_corner_array[(tmp-1)*self.CLOUD_WIDTH+ind]
+                        self.cloud_surf_array[tmp*self.CLOUD_WIDTH+ind] = self.cloud_surf_array[(tmp-1)*self.CLOUD_WIDTH+ind]
+                    self.cloud_corner_array[ind] = corner_tmp
+                    self.cloud_surf_array[ind] = surf_tmp
 
             cube_center_j += 1
             self.cloud_center_height += 1
@@ -88,23 +115,51 @@ class Mapper:
         while cube_center_j >= self.CLOUD_HEIGHT - 3:
             for i in range(self.CLOUD_WIDTH):
                 for k in range(self.CLOUD_DEPTH):
-                    pass
-            
+                    j = 0
+                    ind = i + k * self.CLOUD_WIDTH * self.CLOUD_HEIGHT
+                    corner_tmp = self.cloud_corner_array[j*self.CLOUD_WIDTH+ind]
+                    surf_tmp = self.cloud_surf_array[j*self.CLOUD_WIDTH+ind]
+
+                    for tmp in range(0, self.CLOUD_HEIGHT-1):
+                        self.cloud_corner_array[tmp*self.CLOUD_WIDTH+ind] = self.cloud_corner_array[(tmp+1)*self.CLOUD_WIDTH+ind]
+                        self.cloud_surf_array[tmp*self.CLOUD_WIDTH+ind] = self.cloud_corner_array[(tmp+1)*self.CLOUD_WIDTH+ind]
+                    self.cloud_corner_array[ind + (self.CLOUD_HEIGHT-1)*self.CLOUD_WIDTH] = corner_tmp
+                    self.cloud_surf_array[ind + (self.CLOUD_HEIGHT-1)*self.CLOUD_WIDTH] = surf_tmp
+  
             cube_center_j -= 1
             self.cloud_center_height -= 1
 
         while cube_center_k < 3:
             for i in range(self.CLOUD_WIDTH):
                 for j in range(self.CLOUD_HEIGHT):
-                    pass
-            
+                    k = self.CLOUD_DEPTH - 1
+                    ind = i + j * self.CLOUD_WIDTH
+                    corner_tmp = self.cloud_corner_array[k * self.CLOUD_WIDTH * self.CLOUD_HEIGHT + ind]
+                    surf_tmp = self.cloud_surf_array[k * self.CLOUD_WIDTH * self.CLOUD_HEIGHT + ind]
+
+                    for tmp in range(k, 0, -1):
+                        self.cloud_corner_array[tmp * self.CLOUD_WIDTH * self.CLOUD_HEIGHT + ind] = self.cloud_corner_array[(tmp-1) * self.CLOUD_WIDTH * self.CLOUD_HEIGHT + ind]
+                        self.cloud_surf_array[tmp * self.CLOUD_WIDTH * self.CLOUD_HEIGHT + ind] = self.cloud_surf_array[(tmp-1) * self.CLOUD_WIDTH * self.CLOUD_HEIGHT + ind]
+
+                    self.cloud_corner_array[ind] = corner_tmp
+                    self.cloud_surf_array[ind] = surf_tmp
+
             cube_center_k += 1
             self.cloud_center_depth += 1
         
         while cube_center_k >= self.CLOUD_DEPTH - 3:
             for i in range(self.CLOUD_WIDTH):
                 for j in range(self.CLOUD_HEIGHT):
-                    pass
+                    k = 0
+                    ind = i + j * self.CLOUD_WIDTH
+                    corner_tmp = self.cloud_corner_array[k * self.CLOUD_WIDTH * self.CLOUD_HEIGHT + ind]
+                    surf_tmp = self.cloud_surf_array[k * self.CLOUD_WIDTH * self.CLOUD_HEIGHT + ind]
+
+                    for tmp in range(0, self.CLOUD_DEPTH - 1):
+                        self.cloud_corner_array[tmp * self.CLOUD_WIDTH * self.CLOUD_HEIGHT + ind] = self.cloud_corner_array[(tmp+1) * self.CLOUD_WIDTH * self.CLOUD_HEIGHT + ind]
+                        self.cloud_surf_array[tmp * self.CLOUD_WIDTH * self.CLOUD_HEIGHT + ind] = self.cloud_surf_array[(tmp+1) * self.CLOUD_WIDTH * self.CLOUD_HEIGHT + ind]
+                    self.cloud_corner_array[ind + (self.CLOUD_DEPTH-1) * self.CLOUD_WIDTH * self.CLOUD_HEIGHT] = corner_tmp
+                    self.cloud_surf_array[ind + (self.CLOUD_DEPTH-1) * self.CLOUD_WIDTH * self.CLOUD_HEIGHT] = surf_tmp
             
             cube_center_k -= 1
             self.cloud_center_depth -= 1
@@ -276,7 +331,7 @@ class Mapper:
             
             if cube_i >=0 and cube_i < self.CLOUD_WIDTH and cube_j >= 0 and cube_j < self.CLOUD_HEIGHT and cube_k >= 0 and cube_k < self.CLOUD_DEPTH:
                 cube_ind = cube_i + cube_j * self.CLOUD_WIDTH + cube_k * self.CLOUD_WIDTH * self.CLOUD_HEIGHT
-                # TODO: Push to corner array
+                self.cloud_corner_array[cube_ind].append(point_sel)
 
         for i in range(surf_last_ds.shape[0]):
              point_sel = self.point_associate_to_map(corner_last_ds[i, :3])
@@ -294,7 +349,24 @@ class Mapper:
             
             if cube_i >=0 and cube_i < self.CLOUD_WIDTH and cube_j >= 0 and cube_j < self.CLOUD_HEIGHT and cube_k >= 0 and cube_k < self.CLOUD_DEPTH:
                 cube_ind = cube_i + cube_j * self.CLOUD_WIDTH + cube_k * self.CLOUD_WIDTH * self.CLOUD_HEIGHT
-                # TODO: Push to surface array
+                self.cloud_surf_array[cube_ind].append(point_sel)
+
+        for i in range(valid_cloud_num):
+            ind = self.valid_index[i]
+
+            _, self.cloud_corner_array[ind] = downsample_filter(np.vstack(self.cloud_corner_array[ind]), 0.4)
+            # TODO: list and numpy array conversion
+            _, self.cloud_surf_array[ind] = downsample_filter(np.vstack(self.cloud_surf_array[ind]), 0.8)
+
+        if self.frame_count % 20 == 0:
+            map_pts = []
+            for i in range(self.CUBE_NUM):
+                map_pts += self.cloud_corner_array[i] 
+                map_pts += self.cloud_surf_array[i]
+            
+            map_pts = np.vstack(map_pts)
+        
+        self.frame_count += 1
 
 
 
