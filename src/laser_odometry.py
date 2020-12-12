@@ -43,12 +43,13 @@ class Odometry:
         # surf_flat = cloud[feature_id[2], :]
         # surf_less = cloud[feature_id[3], :]
         is_degenerate = False
+        T_w_curr = None
         if not self.init:
             self.init = True
         else:
             P_mat = np.identity(6)
             if self.surf_last.shape[0] < 100 or self.corner_last.shape[0] < 10:
-                return None
+                return self.surf_last, self.corner_last, T_w_curr
 
             for opt_iter in range(self.OPTIM_ITERATION):
                 if opt_iter % 5 == 0:
@@ -112,18 +113,17 @@ class Odometry:
                 corner_less[i, :3] = self.transform_to_end(corner_less[i, :3], corner_less[i, -1]).T
 
             # Debug
-            out_cloud = np.vstack((surf_less, corner_less))
-            out_cloud_w = np.matmul(self.rot_w_curr, out_cloud[:, :3].T) + self.trans_w_curr
+            # out_cloud = np.vstack((surf_less, corner_less))
+            # out_cloud_w = np.matmul(self.rot_w_curr, out_cloud[:, :3].T) + self.trans_w_curr
             # np.savetxt(str(self.frame_count)+'_end.txt', out_cloud)
-            np.savetxt(str(self.frame_count)+'_world.txt', out_cloud_w.T)
-
+            # np.savetxt(str(self.frame_count)+'_world.txt', out_cloud_w.T)
 
         surf_less_index = self.get_downsample_cloud(surf_less)
         corner_less_index = self.get_downsample_cloud(corner_less)
         self.surf_last = surf_less[surf_less_index, :]
         self.corner_last = corner_less[corner_less_index, :]
         self.frame_count += 1
-        return self.trans_w_curr
+        return self.surf_last, self.corner_last, T_w_curr
 
     def get_corner_correspondences(self, corner_sharp):
         curr_points = []

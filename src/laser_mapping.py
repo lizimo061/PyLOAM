@@ -22,22 +22,25 @@ class Mapper:
         self.valid_index = [-1] * 125
         self.surround_index = [-1] * 125
 
-        self.cloud_corner_array = [[] for i in range(self.CUBE_NUM)]]
-        self.cloud_surf_array = [[] for i in range(self.CUBE_NUM)]]
+        self.cloud_corner_array = [[] for i in range(self.CUBE_NUM)]
+        self.cloud_surf_array = [[] for i in range(self.CUBE_NUM)]
         self.frame_count = 0
 
         self.rot_wodom_curr = np.eye(3)
-        self.trans_wodom_curr = np.zeros(3,1)
+        self.trans_wodom_curr = np.zeros((3,1))
         self.rot_wmap_wodom = np.eye(3)
-        self.trans_wmap_wodom = np.eye(3)
+        self.trans_wmap_wodom = np.zeros((3,1))
         self.rot_w_curr = np.eye(3)
-        self.trans_w_curr = np.zeros(3,1)
+        self.trans_w_curr = np.zeros((3,1))
         self.transform = np.zeros(6)
 
     def transform_associate_to_map(self, rot_wodom_curr, trans_wodom_curr):
+        self.rot_wodom_curr = rot_wodom_curr
+        self.trans_wodom_curr = trans_wodom_curr
         rot_w_curr = np.matmul(self.rot_wmap_wodom, rot_wodom_curr)
-        trans_w_curr = np.matmul(self.rot_wmap_wodom, trans_wodom_curr) + self.trans_wmap_wodom
-        # TODO: Update self.transform
+        trans_w_curr = np.matmul(self.rot_wmap_wodom, trans_wodom_curr).reshape(3,1) + self.trans_wmap_wodom
+        rx, ry, rz = get_euler_angles(rot_w_curr)
+        self.transform = np.array([rx, ry, rz, trans_w_curr[0][0], trans_w_curr[1][0], trans_w_curr[2][0]])
         return rot_w_curr, trans_w_curr
 
     def point_associate_to_map(self, pt):
@@ -45,20 +48,24 @@ class Mapper:
         return pt_out
     
     def transform_update(self):
-        # TODO: Update transforms
+        rot_w_curr = get_rotation(self.transform[0], self.transform[1], self.transform[2])
+        trans_w_curr = np.array([self.transform[3], self.transform[4], self.transform[5]]).reshape(3,1)
+        self.rot_wmap_wodom = rot_w_curr * self.rot_wodom_curr.T
+        self.trans_wmap_wodom = trans_w_curr - self.rot_wmap_wodom * self.trans_wodom_curr
 
     def map_frame(self, odom, corner_last, surf_last):
+        rot_wodom_curr = odom[:3, :3]
+        trans_wodom_curr = odom[:3, 3]
         rot_w_curr, trans_w_curr = self.transform_associate_to_map(rot_wodom_curr, trans_wodom_curr)
+        cube_center_i = int((trans_w_curr[0][0] + 25.0) / 50.0) + self.cloud_center_width
+        cube_center_j = int((trans_w_curr[1][0] + 25.0) / 50.0) + self.cloud_center_height
+        cube_center_k = int((trans_w_curr[2][0] + 25.0) / 50.0) + self.cloud_center_depth
 
-        cube_center_i = int((trans_w_curr[0] + 25.0) / 50.0) + self.cloud_center_width
-        cube_center_j = int((trans_w_curr[1] + 25.0) / 50.0) + self.cloud_center_height
-        cube_center_k = int((trans_w_curr[2] + 25.0) / 50.0) + self.cloud_center_depth
-
-        if trans_w_curr[0] + 25.0 < 0:
+        if trans_w_curr[0][0] + 25.0 < 0:
             cube_center_i -= 1
-        if trans_w_curr[1] + 25.0 < 0:
+        if trans_w_curr[1][0] + 25.0 < 0:
             cube_center_j -= 1
-        if trans_w_curr[2] + 25.0 < 0:
+        if trans_w_curr[2][0] + 25.0 < 0:
             cube_center_k -= 1
         
         while cube_center_i < 3:
@@ -173,8 +180,8 @@ class Mapper:
                     if i>=0 and i<self.CLOUD_WIDTH and j>=0 and j<self.CLOUD_HEIGHT and k>=0 and k<self.CLOUD_DEPTH:
                         self.valid_index[valid_cloud_num] = i + j * self.CLOUD_WIDTH + k * self.CLOUD_HEIGHT * self.CLOUD_WIDTH
                         valid_cloud_num += 1
-                        self.surround_index[surround_index] = i + j * self.CLOUD_WIDTH + k * self.CLOUD_HEIGHT * self.CLOUD_WIDTH
-                        surround_index += 1
+                        self.surround_index[surround_cloud_num] = i + j * self.CLOUD_WIDTH + k * self.CLOUD_HEIGHT * self.CLOUD_WIDTH
+                        surround_cloud_num += 1
         
         map_corner_list = []
         map_surf_list = []
@@ -274,17 +281,17 @@ class Mapper:
                 for i in range(len(coeff_list)):
                     A_tmp = np.zeros(1,6)
                     B_tmp = np.zeros(1,1)
-                    A_tmp[0, 0] = (crx*sry*srz*pt_list[i][0] + crx*crz*sry*pt_list[i][1] - srx*sry*pt_list[i][2]) * coeff_list[i][0]
-                        + (-srx*srz*pt_list[i][0] - crz*srx*pt_list[i][1] - crx*pt_list[i][2]) * coeff_list[i][1]
+                    A_tmp[0, 0] = (crx*sry*srz*pt_list[i][0] + crx*crz*sry*pt_list[i][1] - srx*sry*pt_list[i][2]) * coeff_list[i][0] \
+                        + (-srx*srz*pt_list[i][0] - crz*srx*pt_list[i][1] - crx*pt_list[i][2]) * coeff_list[i][1] \
                         + (crx*cry*srz*pt_list[i][0] + crx*cry*crz*pt_list[i][1] - cry*srx*pt_list[i][2]) * coeff_list[i][2]
 
-                    A_tmp[0, 1] = ((cry*srx*srz - crz*sry)*pt_list[i][0] 
-                        + (sry*srz + cry*crz*srx)*pt_list[i][1] + crx*cry*pt_list[i][2]) * coeff_list[i][0]
-                        + ((-cry*crz - srx*sry*srz)*pt_list[i][0]
+                    A_tmp[0, 1] = ((cry*srx*srz - crz*sry)*pt_list[i][0] \
+                        + (sry*srz + cry*crz*srx)*pt_list[i][1] + crx*cry*pt_list[i][2]) * coeff_list[i][0] \
+                        + ((-cry*crz - srx*sry*srz)*pt_list[i][0] \
                         + (cry*srz - crz*srx*sry)*pt_list[i][1] - crx*sry*pt_list[i][2]) * coeff_list[i][2]
 
-                    A_tmp[0, 2] = ((crz*srx*sry - cry*srz)*pt_list[i][0] + (-cry*crz-srx*sry*srz)*pt_list[i][1])*coeff_list[i][0]
-                        + (crx*crz*pt_list[i][0] - crx*srz*pt_list[i][1]) * coeff_list[i][1]
+                    A_tmp[0, 2] = ((crz*srx*sry - cry*srz)*pt_list[i][0] + (-cry*crz-srx*sry*srz)*pt_list[i][1])*coeff_list[i][0] \
+                        + (crx*crz*pt_list[i][0] - crx*srz*pt_list[i][1]) * coeff_list[i][1] \
                         + ((sry*srz + cry*crz*srx)*pt_list[i][0] + (crz*sry-cry*srx*srz)*pt_list[i][1])*coeff_list[i][2]
                     
                     A_tmp[0, 3] = coeff_list[i][0]
@@ -302,6 +309,7 @@ class Mapper:
                 delta_transform = np.linalg.solve(np.matmul(A_mat.T, A_mat), np.matmul(A_mat.T, B_mat))
 
                 if iter_num == 0:
+                    pass
                     # TODO: Degenerate setting
                 
                 self.transform += np.squeeze(delta_transform)
@@ -331,10 +339,10 @@ class Mapper:
             
             if cube_i >=0 and cube_i < self.CLOUD_WIDTH and cube_j >= 0 and cube_j < self.CLOUD_HEIGHT and cube_k >= 0 and cube_k < self.CLOUD_DEPTH:
                 cube_ind = cube_i + cube_j * self.CLOUD_WIDTH + cube_k * self.CLOUD_WIDTH * self.CLOUD_HEIGHT
-                self.cloud_corner_array[cube_ind].append(point_sel)
+                self.cloud_corner_array[cube_ind].append(point_sel.reshape(1,3))
 
         for i in range(surf_last_ds.shape[0]):
-             point_sel = self.point_associate_to_map(corner_last_ds[i, :3])
+            point_sel = self.point_associate_to_map(surf_last_ds[i, :3])
 
             cube_i = int((point_sel[0] + 25.0) / 50.0) + self.cloud_center_width
             cube_j = int((point_sel[1] + 25.0) / 50.0) + self.cloud_center_height
@@ -349,14 +357,16 @@ class Mapper:
             
             if cube_i >=0 and cube_i < self.CLOUD_WIDTH and cube_j >= 0 and cube_j < self.CLOUD_HEIGHT and cube_k >= 0 and cube_k < self.CLOUD_DEPTH:
                 cube_ind = cube_i + cube_j * self.CLOUD_WIDTH + cube_k * self.CLOUD_WIDTH * self.CLOUD_HEIGHT
-                self.cloud_surf_array[cube_ind].append(point_sel)
+                self.cloud_surf_array[cube_ind].append(point_sel.reshape(1,3))
 
         for i in range(valid_cloud_num):
             ind = self.valid_index[i]
-
-            _, self.cloud_corner_array[ind] = downsample_filter(np.vstack(self.cloud_corner_array[ind]), 0.4)
+            if len(self.cloud_corner_array[ind]) > 0:
+                _, self.cloud_corner_array[ind] = downsample_filter(np.vstack(self.cloud_corner_array[ind]), 0.4)
             # TODO: list and numpy array conversion
-            _, self.cloud_surf_array[ind] = downsample_filter(np.vstack(self.cloud_surf_array[ind]), 0.8)
+
+            if len(self.cloud_surf_array[ind]) > 0:
+                _, self.cloud_surf_array[ind] = downsample_filter(np.vstack(self.cloud_surf_array[ind]), 0.8)
 
         if self.frame_count % 20 == 0:
             map_pts = []

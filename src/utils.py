@@ -6,6 +6,11 @@ def get_rotation(rx, ry, rz):
     r = R.from_euler('yxz', [ry, rx, rz], degrees=False)
     return r.as_dcm()
 
+def get_euler_angles(rot_mat):
+    r = R.from_dcm(rot_mat)
+    deg = r.as_euler('yxz', degrees=False)
+    return deg[1], deg[0], deg[2]
+
 def downsample_filter(cloud, voxel_size):
     o3d_cloud = o3d.geometry.PointCloud()
     o3d_cloud.points = o3d.utility.Vector3dVector(cloud[:, :3])
