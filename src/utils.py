@@ -1,5 +1,6 @@
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
+import numpy as np
 import open3d as o3d
 
 def get_rotation(rx, ry, rz):
@@ -29,3 +30,6 @@ def get_mean_cov(cloud):
     o3d_cloud.points = o3d.utility.Vector3dVector(cloud[:, :3])
     mean_cov = o3d_cloud.compute_mean_and_covariance()
     return mean_cov[0], mean_cov[1]
+
+def cloud_to_list(cloud):
+    return [cloud[i, :3].reshape(1,3) for i in range(cloud.shape[0])]
