@@ -16,7 +16,7 @@ if __name__=="__main__":
     output_dir = sys.argv[2]
     bag = rosbag.Bag(bag_name)
     counter = 0
-    for topic, msg, t in bag.read_messages(topics=['/velodyne16/velodyne_points']):
+    for topic, msg, t in bag.read_messages(topics=['/velodyne_points']):
         cloud = sensor_msgs.point_cloud2.read_points_list(msg)
         cloud = point_list_to_cloud(cloud)
         np.save(os.path.join(output_dir, str(counter) + '.npy'), cloud)

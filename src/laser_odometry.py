@@ -164,7 +164,7 @@ class Odometry:
                         min_ind2 = j
                 
                 if min_ind2 >= 0:
-                    ab_dist = np.sum(np.square(self.surf_last[min_ind2, :3]-self.surf_last[closest_ind, :3]))
+                    ab_dist = np.sum(np.square(self.corner_last[min_ind2, :3]-self.corner_last[closest_ind, :3]))
                     if ab_dist < 1e-3:
                         continue
                     curr_points.append(corner_sharp[i, :])
@@ -198,7 +198,7 @@ class Odometry:
                     if self.surf_last[j, self.RING_INDEX] <= closest_scan_id and point_sq_dist < min_sq_dist2:
                         min_sq_dist2 = point_sq_dist
                         min_ind2 = j
-                    elif self.surf_last[j, self.RING_INDEX] > closest_scan_id and point_sq_dist < min_sq_dist3:
+                    elif point_sq_dist < min_sq_dist3:
                         min_sq_dist3 = point_sq_dist
                         min_ind3 = j
                 
@@ -209,7 +209,7 @@ class Odometry:
                     if self.surf_last[j, self.RING_INDEX] >= closest_scan_id and point_sq_dist < min_sq_dist2:
                         min_sq_dist2 = point_sq_dist
                         min_ind2 = j
-                    elif self.surf_last[j, self.RING_INDEX] < closest_scan_id and point_sq_dist < min_sq_dist3:
+                    elif point_sq_dist < min_sq_dist3:
                         min_sq_dist3 = point_sq_dist
                         min_ind3 = j
                 
@@ -277,7 +277,7 @@ class Odometry:
             pt_b = surf_points_b[i][:3].reshape(3,1)
             pt_c = surf_points_c[i][:3].reshape(3,1)
             pt_sel = self.transform_to_start(pt, s)
-            plane_norm = np.cross((pt_a - pt_b), (pt_a - pt_c), axis=0)
+            plane_norm = np.cross((pt_b - pt_a), (pt_c - pt_a), axis=0)
             norm = np.linalg.norm(plane_norm)
             plane_norm = plane_norm / norm
             dist = np.dot(np.transpose(plane_norm),(pt_sel - pt_a))
@@ -365,8 +365,8 @@ class Odometry:
                 continue
 
             la = weight * (ab[1]*edge_normal[2] + ab[2]*edge_normal[1]) / (ab_norm*edge_norm)
-            lb = -weight * (ab[0]*edge_normal[2] - ab[2]*edge_normal[0]) / (ab_norm*edge_norm)
-            lc = -weight * (ab[0]*edge_normal[1] + ab[1]*edge_normal[0]) / (ab_norm*edge_norm)
+            lb = -weight * (ab[0]*edge_normal[2] + ab[2]*edge_normal[0]) / (ab_norm*edge_norm)
+            lc = weight * (ab[0]*edge_normal[1] - ab[1]*edge_normal[0]) / (ab_norm*edge_norm)
 
             A_tmp = np.zeros((1,6))
             B_tmp = np.zeros((1,1))
