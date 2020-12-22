@@ -118,10 +118,10 @@ class Odometry:
             # np.savetxt(str(self.frame_count)+'_end.txt', out_cloud)
             # np.savetxt(str(self.frame_count)+'_world.txt', out_cloud_w.T)
 
-        surf_less_index = self.get_downsample_cloud(surf_less)
-        corner_less_index = self.get_downsample_cloud(corner_less)
-        self.surf_last = surf_less[surf_less_index, :]
-        self.corner_last = corner_less[corner_less_index, :]
+        # surf_less_index = self.get_downsample_cloud(surf_less)
+        # corner_less_index = self.get_downsample_cloud(corner_less)
+        self.surf_last = surf_less
+        self.corner_last = corner_less
         self.frame_count += 1
         return self.surf_last, self.corner_last, T_w_curr
 
