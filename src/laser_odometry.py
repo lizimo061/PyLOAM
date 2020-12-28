@@ -25,6 +25,7 @@ class Odometry:
         self.DISTORTION = False
         self.USE_ROBUST_LOSS = False
         self.VOXEL_SIZE = 0.2
+        self.SKIP_FRAME_NUM = 5
 
         # For test,
         self.trans_list = []
@@ -59,8 +60,8 @@ class Odometry:
                     print('Warning: too few matches')
                     continue
  
-                AtA = np.matmul(A_mat.transpose(), A_mat)
-                AtB = np.matmul(A_mat.transpose(), B_mat)
+                AtA = np.matmul(A_mat.T, A_mat)
+                AtB = np.matmul(A_mat.T, B_mat)
                 X_mat = np.linalg.solve(AtA, AtB)
                 
                 if opt_iter == 0:
@@ -106,14 +107,6 @@ class Odometry:
             for i in range(corner_less.shape[0]):
                 corner_less[i, :3] = self.transform_to_end(corner_less[i, :3], corner_less[i, -1]).T
 
-            # Debug
-            # out_cloud = np.vstack((surf_less, corner_less))
-            # out_cloud_w = np.matmul(self.rot_w_curr, out_cloud[:, :3].T) + self.trans_w_curr
-            # np.savetxt(str(self.frame_count)+'_end.txt', out_cloud)
-            # np.savetxt(str(self.frame_count)+'_world.txt', out_cloud_w.T)
-
-        # surf_less_index = self.get_downsample_cloud(surf_less)
-        # corner_less_index = self.get_downsample_cloud(corner_less)
         if surf_less.shape[0] > 100 and corner_less.shape[0] > 10:
             self.surf_last = surf_less
             self.corner_last = corner_less

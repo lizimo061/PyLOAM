@@ -37,11 +37,10 @@ class Mapper:
     def transform_associate_to_map(self, rot_wodom_curr, trans_wodom_curr):
         self.rot_wodom_curr = rot_wodom_curr
         self.trans_wodom_curr = trans_wodom_curr
-        rot_w_curr = np.matmul(self.rot_wmap_wodom, rot_wodom_curr)
-        trans_w_curr = np.matmul(self.rot_wmap_wodom, trans_wodom_curr).reshape(3,1) + self.trans_wmap_wodom
+        self.rot_w_curr = np.matmul(self.rot_wmap_wodom, rot_wodom_curr)
+        self.trans_w_curr = np.matmul(self.rot_wmap_wodom, trans_wodom_curr).reshape(3,1) + self.trans_wmap_wodom
         rx, ry, rz = get_euler_angles(rot_w_curr)
         self.transform = np.array([rx, ry, rz, trans_w_curr[0][0], trans_w_curr[1][0], trans_w_curr[2][0]])
-        return rot_w_curr, trans_w_curr
 
     def point_associate_to_map(self, pt):
         pt_out = np.matmul(self.rot_w_curr, pt.reshape(3, 1)).reshape(1,3) + self.trans_w_curr.reshape(1, 3)
@@ -50,16 +49,16 @@ class Mapper:
     def transform_update(self):
         rot_w_curr = get_rotation(self.transform[0], self.transform[1], self.transform[2])
         trans_w_curr = np.array([self.transform[3], self.transform[4], self.transform[5]]).reshape(3,1)
-        self.rot_wmap_wodom = rot_w_curr * self.rot_wodom_curr.T
-        self.trans_wmap_wodom = trans_w_curr - self.rot_wmap_wodom * self.trans_wodom_curr
+        self.rot_wmap_wodom = self.rot_w_curr * self.rot_wodom_curr.T
+        self.trans_wmap_wodom = self.trans_w_curr - self.rot_wmap_wodom * self.trans_wodom_curr
 
     def map_frame(self, odom, corner_last, surf_last):
-        rot_wodom_curr = odom[:3, :3]
-        trans_wodom_curr = odom[:3, 3]
-        rot_w_curr, trans_w_curr = self.transform_associate_to_map(rot_wodom_curr, trans_wodom_curr)
-        cube_center_i = int((trans_w_curr[0][0] + 25.0) / 50.0) + self.cloud_center_width
-        cube_center_j = int((trans_w_curr[1][0] + 25.0) / 50.0) + self.cloud_center_height
-        cube_center_k = int((trans_w_curr[2][0] + 25.0) / 50.0) + self.cloud_center_depth
+        self.rot_wodom_curr = odom[:3, :3]
+        self.trans_wodom_curr = odom[:3, 3]
+        self.transform_associate_to_map(rot_wodom_curr, trans_wodom_curr)
+        cube_center_i = int((self.trans_w_curr[0][0] + 25.0) / 50.0) + self.cloud_center_width
+        cube_center_j = int((self.trans_w_curr[1][0] + 25.0) / 50.0) + self.cloud_center_height
+        cube_center_k = int((self.trans_w_curr[2][0] + 25.0) / 50.0) + self.cloud_center_depth
 
         if trans_w_curr[0][0] + 25.0 < 0:
             cube_center_i -= 1
@@ -304,17 +303,29 @@ class Mapper:
 
                 A_mat = np.vstack(A_mat)
                 B_mat = np.vstack(B_mat)
-
-                delta_transform = np.linalg.solve(np.matmul(A_mat.T, A_mat), np.matmul(A_mat.T, B_mat))
+                AtA = np.matmul(A_mat.T, A_mat)
+                AtB = np.matmul(A_mat.T, B_mat)
+                X_mat = np.linalg.solve(AtA, AtB)
 
                 if iter_num == 0:
-                    pass
-                    # TODO: Degenerate setting
+                    vals, vecs = np.linalg.eig(AtA)
+                    eigen_vec = vecs.copy()
+                    for i in range(6):
+                        if vals[i] < 100:
+                            print("Warning: Degenerate!")
+                            is_degenerate = True
+                            eigen_vec[:, i] = np.zeros(6)
+                        else:
+                            break
+                    P_mat = np.matmul(np.linalg.inv(vecs), eigen_vec)
                 
-                self.transform += np.squeeze(delta_transform)
+                if is_degenerate:
+                    X_mat = np.matmul(P_mat, X_mat)
+                
+                self.transform += np.squeeze(X_mat)
 
-                delta_r = np.linalg.norm(np.rad2deg(delta_transform[:3]))
-                delta_t = np.linalg.norm(delta_transform[3:] * 100)
+                delta_r = np.linalg.norm(np.rad2deg(X_mat[:3]))
+                delta_t = np.linalg.norm(X_mat[3:] * 100)
 
                 if delta_r < 0.05 and delta_t < 0.05:
                     print("Delta too small.")
@@ -368,15 +379,18 @@ class Mapper:
                 _, ds_surf = downsample_filter(np.vstack(self.cloud_surf_array[ind]), 0.8)
                 self.cloud_surf_array[ind] = cloud_to_list(ds_surf)
 
-        if self.frame_count % 20 == 0:
+        if self.frame_count % 10 == 0:
             map_pts = []
             for i in range(self.CUBE_NUM):
                 map_pts += self.cloud_corner_array[i] 
                 map_pts += self.cloud_surf_array[i]
             
             map_pts = np.vstack(map_pts)
+            np.savetxt("frame_" + str(self.frame_count) + ".txt", res, fmt='%.8f')
         
         self.frame_count += 1
+
+
 
 
 
