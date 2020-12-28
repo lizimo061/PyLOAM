@@ -28,13 +28,6 @@ class Odometry:
 
         # For test,
         self.trans_list = []
-    
-    def angle_norm(self, angle):
-        if angle <= -math.pi:
-            angle += 2*math.pi
-        elif angle > math.pi:
-            angle -= 2*math.pi
-        return angle
 
     def grab_frame(self, cloud):
         corner_sharp, corner_less, surf_flat, surf_less = self.feature_extractor.feature_extract(cloud)
@@ -49,14 +42,15 @@ class Odometry:
         else:
             P_mat = np.identity(6)
             if self.surf_last.shape[0] < 100 or self.corner_last.shape[0] < 10:
+                print("Warning: too few points in last frame")
                 return self.surf_last, self.corner_last, T_w_curr
 
             for opt_iter in range(self.OPTIM_ITERATION):
                 if opt_iter % 5 == 0:
                     corner_points, corner_points_a, corner_points_b = self.get_corner_correspondences(corner_sharp)
                     surf_points, surf_points_a, surf_points_b, surf_points_c = self.get_surf_correspondences(surf_flat)
-                edge_A, edge_B = self.get_edge_mat(corner_points, corner_points_a, corner_points_b, 1.0)
-                surf_A, surf_B = self.get_plane_mat(surf_points, surf_points_a, surf_points_b, surf_points_c, 1.0)
+                edge_A, edge_B = self.get_edge_mat(corner_points, corner_points_a, corner_points_b, opt_iter)
+                surf_A, surf_B = self.get_plane_mat(surf_points, surf_points_a, surf_points_b, surf_points_c, opt_iter)
 
                 A_mat = np.vstack((edge_A, surf_A))
                 B_mat = np.vstack((edge_B, surf_B)) * -0.05 # Reference to original LOAM
@@ -120,8 +114,9 @@ class Odometry:
 
         # surf_less_index = self.get_downsample_cloud(surf_less)
         # corner_less_index = self.get_downsample_cloud(corner_less)
-        self.surf_last = surf_less
-        self.corner_last = corner_less
+        if surf_less.shape[0] > 100 and corner_less.shape[0] > 10:
+            self.surf_last = surf_less
+            self.corner_last = corner_less
         self.frame_count += 1
         return self.surf_last, self.corner_last, T_w_curr
 
@@ -250,7 +245,7 @@ class Odometry:
     def transform_to_end(self, pt, s=1.0):
         un_point = self.transform_to_start(pt, s)
         rot_mat = get_rotation(self.transform[0], self.transform[1], self.transform[2])
-        translation = self.transform[3:6]
+        translation = self.transform[3:]
         pt_end = rot_mat.dot(un_point) + translation.reshape(3,1)
         return pt_end
 

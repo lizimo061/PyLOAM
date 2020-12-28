@@ -38,7 +38,7 @@ class FeatureExtract:
 
     def get_rel_time(self, cloud):
         start_ori = -np.arctan2(cloud[0, 1], cloud[0, 0])
-        end_ori = -np.arctan2(cloud[-1, 1], cloud[-1, 0])
+        end_ori = -np.arctan2(cloud[-1, 1], cloud[-1, 0]) + 2*math.pi
         if end_ori - start_ori > 3 * math.pi:
             end_ori -= 2*math.pi
         elif end_ori - start_ori < math.pi:
@@ -49,6 +49,7 @@ class FeatureExtract:
 
         for i in range(cloud.shape[0]):
             pt = np.array([cloud[i, 1], cloud[i, 2], cloud[i, 0]])
+            cloud[i, :3] = pt
             ori = -np.arctan2(pt[0], pt[2])
             if not half_passed:
                 if ori < start_ori - math.pi/2:
