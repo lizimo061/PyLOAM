@@ -37,7 +37,7 @@ class Odometry:
         # surf_flat = cloud[feature_id[2], :]
         # surf_less = cloud[feature_id[3], :]
         is_degenerate = False
-        T_w_curr = None
+        T_w_curr = np.eye(4)
         if not self.init:
             self.init = True
         else:
