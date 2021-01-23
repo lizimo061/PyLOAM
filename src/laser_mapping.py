@@ -43,6 +43,8 @@ class Mapper:
         self.transform = np.array([rx, ry, rz, self.trans_w_curr[0][0], self.trans_w_curr[1][0], self.trans_w_curr[2][0]])
 
     def point_associate_to_map(self, pt):
+        self.rot_w_curr = get_rotation(self.transform[0], self.transform[1], self.transform[2])
+        self.trans_w_curr = self.transform[3:].reshape(3,1)
         pt_out = np.matmul(self.rot_w_curr, pt.reshape(3, 1)).reshape(1,3) + self.trans_w_curr.reshape(1, 3)
         return pt_out.squeeze()
     
@@ -211,7 +213,6 @@ class Mapper:
                 for i in range(corner_last_ds.shape[0]):
                     point_sel = self.point_associate_to_map(corner_last_ds[i, :3])
                     [_, ind, dist] = corner_map_tree.search_knn_vector_3d(point_sel, 5)
-
                     if dist[4] < 1.0:
                         center, cov = get_mean_cov(corner_from_map[ind, :3])
                         vals, vecs = np.linalg.eig(cov)
@@ -228,8 +229,8 @@ class Mapper:
                             ab_norm = np.linalg.norm(ab)
 
                             la = (ab[1]*edge_normal[2] + ab[2]*edge_normal[1]) / (ab_norm*edge_norm)
-                            lb = -(ab[0]*edge_normal[2] - ab[2]*edge_normal[0]) / (ab_norm*edge_norm)
-                            lc = -(ab[0]*edge_normal[1] + ab[1]*edge_normal[0]) / (ab_norm*edge_norm)
+                            lb = -(ab[0]*edge_normal[2] + ab[2]*edge_normal[0]) / (ab_norm*edge_norm)
+                            lc = (ab[0]*edge_normal[1] - ab[1]*edge_normal[0]) / (ab_norm*edge_norm)
 
                             ld = edge_norm / ab_norm
 
@@ -266,6 +267,7 @@ class Mapper:
                             pt_list.append(surf_last_ds[i, :3])
                 
                 if len(coeff_list) < 50:
+                    print("Warning: Few matches")
                     continue
 
                 srx = np.sin(self.transform[0])
@@ -328,13 +330,15 @@ class Mapper:
 
                 delta_r = np.linalg.norm(np.rad2deg(X_mat[:3]))
                 delta_t = np.linalg.norm(X_mat[3:] * 100)
-
+                print("{} frame, {} iter, [{},{},{}] delta translation".format(self.frame_count, iter_num, self.transform[3], self.transform[4], self.transform[5]))
                 if delta_r < 0.05 and delta_t < 0.05:
                     print("Delta too small.")
                     break
 
             self.transform_update()
             print("Transform after mapping: ", self.transform)
+        else:
+            print("Few corner and edges in map.")
                         
         for i in range(corner_last_ds.shape[0]):
             point_sel = self.point_associate_to_map(corner_last_ds[i, :3])
@@ -381,7 +385,7 @@ class Mapper:
                 _, ds_surf = downsample_filter(np.vstack(self.cloud_surf_array[ind]), 0.8)
                 self.cloud_surf_array[ind] = cloud_to_list(ds_surf)
 
-        if self.frame_count % 10 == 0:
+        if self.frame_count > 1:
             map_pts = []
             for i in range(self.CUBE_NUM):
                 map_pts += self.cloud_corner_array[i] 
