@@ -14,6 +14,8 @@ class Mapper:
         self.CORNER_VOXEL_SIZE = 0.2
         self.SURF_VOXEL_SIZE = 0.4
         self.MAP_VOXEL_SIZE = 0.6
+        self.STACK_NUM = 2
+        self.OPTIM_ITERATION = 5
         self.CUBE_NUM = self.CLOUD_DEPTH * self.CLOUD_HEIGHT * self.CLOUD_WIDTH
 
         self.cloud_center_width = int(self.CLOUD_WIDTH/2)
@@ -43,18 +45,22 @@ class Mapper:
         self.transform = np.array([rx, ry, rz, self.trans_w_curr[0][0], self.trans_w_curr[1][0], self.trans_w_curr[2][0]])
 
     def point_associate_to_map(self, pt):
-        self.rot_w_curr = get_rotation(self.transform[0], self.transform[1], self.transform[2])
-        self.trans_w_curr = self.transform[3:].reshape(3,1)
-        pt_out = np.matmul(self.rot_w_curr, pt.reshape(3, 1)).reshape(1,3) + self.trans_w_curr.reshape(1, 3)
+        pt_out = np.matmul(self.rot_w_curr, pt.T).T + self.trans_w_curr.reshape(1, 3)
         return pt_out.squeeze()
     
     def transform_update(self):
+        self.rot_wmap_wodom = np.matmul(self.rot_w_curr, self.rot_wodom_curr.T)
+        self.trans_wmap_wodom = self.trans_w_curr - np.matmul(self.rot_wmap_wodom, self.trans_wodom_curr.reshape(3,1))
+    
+    def transform_convert(self):
         self.rot_w_curr = get_rotation(self.transform[0], self.transform[1], self.transform[2])
         self.trans_w_curr = self.transform[3:].reshape(3,1)
-        self.rot_wmap_wodom = self.rot_w_curr * self.rot_wodom_curr.T
-        self.trans_wmap_wodom = self.trans_w_curr - np.matmul(self.rot_wmap_wodom, self.trans_wodom_curr.reshape(3,1))
 
     def map_frame(self, odom, corner_last, surf_last):
+        print('Mapping frame: ', self.frame_count)
+        if self.frame_count % self.STACK_NUM != 0:
+            self.frame_count += 1
+            return None
         rot_wodom_curr = odom[:3, :3]
         trans_wodom_curr = odom[:3, 3].reshape(3,1)
         self.transform_associate_to_map(rot_wodom_curr, trans_wodom_curr)
@@ -205,7 +211,7 @@ class Mapper:
             corner_map_tree = o3d.geometry.KDTreeFlann(np.transpose(corner_from_map[:, :3]))
             surf_map_tree = o3d.geometry.KDTreeFlann(np.transpose(surf_from_map[:, :3]))
 
-            for iter_num in range(10):
+            for iter_num in range(self.OPTIM_ITERATION):
                 coeff_list = []
                 pt_list = []
                 
@@ -265,7 +271,7 @@ class Mapper:
                         if s > 0.1:
                             coeff_list.append(coeff)
                             pt_list.append(surf_last_ds[i, :3])
-                
+
                 if len(coeff_list) < 50:
                     print("Warning: Few matches")
                     continue
@@ -327,19 +333,21 @@ class Mapper:
                     X_mat = np.matmul(P_mat, X_mat)
                 
                 self.transform += np.squeeze(X_mat)
+                self.transform_convert()
 
                 delta_r = np.linalg.norm(np.rad2deg(X_mat[:3]))
                 delta_t = np.linalg.norm(X_mat[3:] * 100)
-                print("{} frame, {} iter, [{},{},{}] delta translation".format(self.frame_count, iter_num, self.transform[3], self.transform[4], self.transform[5]))
+                # print("{} frame, {} iter, [{},{},{}] delta translation".format(self.frame_count, iter_num, self.transform[3], self.transform[4], self.transform[5]))
                 if delta_r < 0.05 and delta_t < 0.05:
                     print("Delta too small.")
                     break
 
             self.transform_update()
-            print("Transform after mapping: ", self.transform)
+            print("Frame: {}, Transform after mapping: {}".format(self.frame_count, self.transform))
         else:
             print("Few corner and edges in map.")
-                        
+
+        new_points = []
         for i in range(corner_last_ds.shape[0]):
             point_sel = self.point_associate_to_map(corner_last_ds[i, :3])
             cube_i = int((point_sel[0] + 25.0) / 50.0) + self.cloud_center_width
@@ -356,6 +364,7 @@ class Mapper:
             if cube_i >=0 and cube_i < self.CLOUD_WIDTH and cube_j >= 0 and cube_j < self.CLOUD_HEIGHT and cube_k >= 0 and cube_k < self.CLOUD_DEPTH:
                 cube_ind = cube_i + cube_j * self.CLOUD_WIDTH + cube_k * self.CLOUD_WIDTH * self.CLOUD_HEIGHT
                 self.cloud_corner_array[cube_ind].append(point_sel)
+                new_points.append(point_sel)
 
         for i in range(surf_last_ds.shape[0]):
             point_sel = self.point_associate_to_map(surf_last_ds[i, :3])
@@ -374,6 +383,7 @@ class Mapper:
             if cube_i >=0 and cube_i < self.CLOUD_WIDTH and cube_j >= 0 and cube_j < self.CLOUD_HEIGHT and cube_k >= 0 and cube_k < self.CLOUD_DEPTH:
                 cube_ind = cube_i + cube_j * self.CLOUD_WIDTH + cube_k * self.CLOUD_WIDTH * self.CLOUD_HEIGHT
                 self.cloud_surf_array[cube_ind].append(point_sel)
+                new_points.append(point_sel)
 
         for i in range(valid_cloud_num):
             ind = self.valid_index[i]
@@ -384,15 +394,6 @@ class Mapper:
             if len(self.cloud_surf_array[ind]) > 0:
                 _, ds_surf = downsample_filter(np.vstack(self.cloud_surf_array[ind]), 0.8)
                 self.cloud_surf_array[ind] = cloud_to_list(ds_surf)
-
-        if self.frame_count > 1:
-            map_pts = []
-            for i in range(self.CUBE_NUM):
-                map_pts += self.cloud_corner_array[i] 
-                map_pts += self.cloud_surf_array[i]
-            
-            map_pts = np.vstack(map_pts)
-            np.savetxt("frame_" + str(self.frame_count) + ".txt", map_pts, fmt='%.8f')
         
         self.frame_count += 1
         return self.trans_w_curr

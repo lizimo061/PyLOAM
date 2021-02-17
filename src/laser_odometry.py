@@ -32,12 +32,9 @@ class Odometry:
 
     def grab_frame(self, cloud):
         corner_sharp, corner_less, surf_flat, surf_less = self.feature_extractor.feature_extract(cloud)
-        # corner_sharp = cloud[feature_id[0], :]
-        # corner_less = cloud[feature_id[1], :]
-        # surf_flat = cloud[feature_id[2], :]
-        # surf_less = cloud[feature_id[3], :]
         is_degenerate = False
         T_w_curr = np.eye(4)
+        print("Processing frame: ", self.frame_count)
         if not self.init:
             self.init = True
         else:
