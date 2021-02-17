@@ -339,7 +339,7 @@ class Mapper:
                 delta_t = np.linalg.norm(X_mat[3:] * 100)
                 # print("{} frame, {} iter, [{},{},{}] delta translation".format(self.frame_count, iter_num, self.transform[3], self.transform[4], self.transform[5]))
                 if delta_r < 0.05 and delta_t < 0.05:
-                    print("Delta too small.")
+                    print("Mapping converged.")
                     break
 
             self.transform_update()
@@ -395,6 +395,14 @@ class Mapper:
                 _, ds_surf = downsample_filter(np.vstack(self.cloud_surf_array[ind]), 0.8)
                 self.cloud_surf_array[ind] = cloud_to_list(ds_surf)
         
+        if self.frame_count % 20 == 0:
+            map_pts = []
+            for i in range(self.CUBE_NUM):
+                map_pts += self.cloud_surf_array[i]
+                map_pts += self.cloud_corner_array[i]
+            map_pts = np.vstack(map_pts)
+            np.savetxt('Mapped_frame_' + str(self.frame_count) + '.txt', map_pts, fmt='%.8f')
+
         self.frame_count += 1
         return self.trans_w_curr
 

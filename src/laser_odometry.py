@@ -82,7 +82,7 @@ class Odometry:
                 delta_t = np.linalg.norm(X_mat[3:] * 100)
                 # print("{} frame, {} iter, [{},{},{}] delta translation".format(self.frame_count, opt_iter, self.transform[3], self.transform[4], self.transform[5]))
                 if delta_r < 0.1 and delta_t < 0.1:
-                    print("Delta too small.")
+                    print("Odometry converged.")
                     break
 
             print("Transform: ", self.transform)

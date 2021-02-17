@@ -1,11 +1,25 @@
 # PyLOAM
-## Python version LOAM (In progress :no_pedestrians:)
+## Python version LOAM
 
-PyLOAM is implemented based on LOAM (J. Zhang and S. Singh. LOAM: Lidar Odometry and Mapping in Real-time). Currently in progress. (Note: just a side project for killing time)
+PyLOAM is implemented based on LOAM (J. Zhang and S. Singh. LOAM: Lidar Odometry and Mapping in Real-time). 
 
 
-## Dependency
+## Requirements
+- Python 3.6.9
+- Numpy 1.19.1
+- Open3D 0.10.0.0
+- pypcd 0.1.1
 
-- pypcd with Python3 supported  
-> pip install --upgrade git+https://github.com/klintan/pypcd.git
-- Open3D
+## Usage
+
+Currently I convert scans to `.npy` files.
+
+`python3 src/main_loam.py --npy_path data/nsh_bag/`
+
+## TODOs
+
+Many stuff are still under development:
+
+- Configuration class
+- Visualization
+- Evaluation
