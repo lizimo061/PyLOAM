@@ -28,3 +28,9 @@ Many stuff are still under development:
 - Configuration class
 - Visualization
 - Evaluation
+
+## Example
+
+Mapped feature points from [NSH indoor outdor](http://wiki.ros.org/loam_velodyne) dataset.
+
+![](example.png)
