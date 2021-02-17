@@ -16,7 +16,7 @@ Currently I convert scans to `.npy` files.
 
 `python3 src/main_loam.py --npy_path ${DATA_PATH}`
 
-# References
+## References
 - [LOAM: Lidar Odometry and Mapping in Real-time](https://frc.ri.cmu.edu/~zhangji/publications/JFR_2018.pdf)
 - [loam_velodyne](https://github.com/daobilige-su/loam_ve)
 - [A-LOAM](https://github.com/HKUST-Aerial-Robotics/A-LOAM)
