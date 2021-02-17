@@ -14,7 +14,7 @@ PyLOAM is implemented based on LOAM (J. Zhang and S. Singh. LOAM: Lidar Odometry
 
 Currently I convert scans to `.npy` files.
 
-`python3 src/main_loam.py --npy_path data/nsh_bag/`
+`python3 src/main_loam.py --npy_path ${DATA_PATH}`
 
 ## TODOs
 
