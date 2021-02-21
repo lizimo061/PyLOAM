@@ -7,15 +7,25 @@ class Mapper:
         self.rot_wmap_wodom = np.eye(3)
         self.trans_wmap_wodom = np.zeros((3,1))
         self.frame_count = 0
-        # Parameters
-        self.CLOUD_WIDTH = 21
-        self.CLOUD_HEIGHT = 21
-        self.CLOUD_DEPTH = 11
-        self.CORNER_VOXEL_SIZE = 0.2
-        self.SURF_VOXEL_SIZE = 0.4
-        self.MAP_VOXEL_SIZE = 0.6
-        self.STACK_NUM = 2
-        self.OPTIM_ITERATION = 5
+        if config is None:
+            self.CLOUD_WIDTH = 21
+            self.CLOUD_HEIGHT = 21
+            self.CLOUD_DEPTH = 11
+            self.CORNER_VOXEL_SIZE = 0.2
+            self.SURF_VOXEL_SIZE = 0.4
+            self.MAP_VOXEL_SIZE = 0.6
+            self.STACK_NUM = 2
+            self.OPTIM_ITERATION = 5
+        else:
+            self.CLOUD_WIDTH = config['mapping']['cloud_width']
+            self.CLOUD_HEIGHT = config['mapping']['cloud_height']
+            self.CLOUD_DEPTH = config['mapping']['cloud_depth']
+            self.CORNER_VOXEL_SIZE = config['mapping']['corner_voxel_size']
+            self.SURF_VOXEL_SIZE = config['mapping']['surf_voxel_size']
+            self.MAP_VOXEL_SIZE = config['mapping']['map_voxel_size']
+            self.STACK_NUM = config['mapping']['stack_num']
+            self.OPTIM_ITERATION = config['mapping']['optim_iteration']
+
         self.CUBE_NUM = self.CLOUD_DEPTH * self.CLOUD_HEIGHT * self.CLOUD_WIDTH
 
         self.cloud_center_width = int(self.CLOUD_WIDTH/2)

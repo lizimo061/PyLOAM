@@ -17,17 +17,20 @@ class Odometry:
         self.trans_w_curr = np.zeros((3,1))
         self.transform = np.array([0., 0., 0., 0., 0., 0.]) # rx, ry, rz, tx, ty, tz
         self.frame_count = 0
-        # TODO: make below variables to config
-        self.DIST_THRES = 5
-        self.RING_INDEX = 4
-        self.NEARBY_SCAN = 2.5
-        self.OPTIM_ITERATION = 25
-        self.DISTORTION = False
-        self.USE_ROBUST_LOSS = False
-        self.VOXEL_SIZE = 0.2
-        self.SKIP_FRAME_NUM = 5
+        if config is None:
+            self.DIST_THRES = 5
+            self.RING_INDEX = 4
+            self.NEARBY_SCAN = 2.5
+            self.OPTIM_ITERATION = 25
+            self.VOXEL_SIZE = 0.2
+        else:
+            self.DIST_THRES = config['odometry']['dist_threshold']
+            self.RING_INDEX = config['odometry']['ring_index']
+            self.NEARBY_SCAN = config['odometry']['nearby_scan']
+            self.OPTIM_ITERATION = config['odometry']['optim_iteration']
+            self.VOXEL_SIZE = config['odometry']['voxel_size']
 
-        # For test,
+        # For test
         self.trans_list = []
 
     def grab_frame(self, cloud):
