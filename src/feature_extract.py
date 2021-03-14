@@ -5,12 +5,17 @@ import math
 
 class FeatureExtract:
     def __init__(self, config=None):
-        self.config = config
-        self.LINE_NUM = 16
-        self.RING_INDEX = 4 #None
-        self.RING_INIT = True #False
-        self.THRES = 0.2 #2
         self.used_line_num = None
+        if config is None:
+            self.LINE_NUM = 16
+            self.RING_INDEX = 4
+            self.RING_INIT = True # If ring index is given
+            self.THRES = 0.2
+        else:
+            self.LINE_NUM = config['feature']['line_num']
+            self.RING_INDEX = config['feature']['ring_index']
+            self.RING_INIT = config['feature']['ring_init']
+            self.THRES = config['feature']['dist_thresh']
     
     def get_scan_id(self, cloud):
         xy_dist = np.sqrt(np.sum(np.square(cloud[:, :2]), axis=1))

@@ -1,4 +1,10 @@
 {
+    "feature" : {
+        "line_num" : 16,
+        "ring_index" : 4,
+        "dist_thresh" : 0.2,
+        "ring_init" : true
+    },
     "odometry" : {
         "dist_threshold" : 5,
         "ring_index" : 4,
