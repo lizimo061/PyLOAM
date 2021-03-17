@@ -1,0 +1,25 @@
+{
+    "feature" : {
+        "line_num" : 64,
+        "ring_index" : 4,
+        "dist_thresh" : 5,
+        "ring_init" : false
+    },
+    "odometry" : {
+        "dist_threshold" : 5,
+        "ring_index" : 4,
+        "nearby_scan" : 2.5,
+        "optim_iteration" : 25,
+        "voxel_size" : 0.2
+    },
+    "mapping" : {
+        "cloud_width" : 21,
+        "cloud_height" : 21,
+        "cloud_depth" : 11,
+        "corner_voxel_size" : 0.4,
+        "surf_voxel_size" : 0.8,
+        "map_voxel_size" : 0.6,
+        "stack_num" : 2,
+        "optim_iteration" : 5
+    }
+}
