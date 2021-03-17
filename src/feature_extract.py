@@ -6,6 +6,7 @@ import math
 class FeatureExtract:
     def __init__(self, config=None):
         self.used_line_num = None
+        self.config = config
         if config is None:
             self.LINE_NUM = 16
             self.RING_INDEX = 4
@@ -127,7 +128,6 @@ class FeatureExtract:
         index = np.arange(cloud.shape[0])
         index = np.expand_dims(index, axis=1).astype('float64')
         curvatures = np.expand_dims(curvatures, axis=1)
-
         curv_index = np.hstack((curvatures, index))
         for scan_id in range(self.used_line_num):
             """ TODO: Avoid empty line """

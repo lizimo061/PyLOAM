@@ -12,7 +12,7 @@ class Odometry:
         self.init = False
         self.surf_last = None
         self.corner_last = None
-        self.feature_extractor = FeatureExtract()
+        self.feature_extractor = FeatureExtract(config=config)
         self.rot_w_curr = np.eye(3)
         self.trans_w_curr = np.zeros((3,1))
         self.transform = np.array([0., 0., 0., 0., 0., 0.]) # rx, ry, rz, tx, ty, tz
